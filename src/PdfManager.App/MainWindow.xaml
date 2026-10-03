@@ -1,0 +1,567 @@
+<ui:FluentWindow x:Class="PdfManager.App.MainWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:vm="clr-namespace:PdfManager.App.ViewModels"
+                 xmlns:conv="clr-namespace:PdfManager.App.Converters"
+                 xmlns:views="clr-namespace:PdfManager.App.Views"
+                 mc:Ignorable="d"
+                 d:DataContext="{d:DesignInstance vm:MainViewModel}"
+                 Title="PdfManager"
+                 Width="1400" Height="860" MinWidth="960" MinHeight="600"
+                 WindowStartupLocation="CenterScreen"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round"
+                 AllowDrop="True"
+                 PreviewDragOver="OnDragOver"
+                 PreviewDrop="OnDrop">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+        <conv:ThumbnailConverter x:Key="Thumbnail" DecodeWidth="240" />
+        <conv:NullToCollapsedConverter x:Key="NullToCollapsed" />
+        <Style x:Key="PaneBorder" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style x:Key="SecondaryText" TargetType="ui:TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="InfoLabel" TargetType="ui:TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Margin" Value="0,0,8,4" />
+        </Style>
+
+        <!-- サムネイル 1 枚分。選択中は枠に色を付けて強調する(決定ログ G-5) -->
+        <Style x:Key="ThumbnailItem" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Frame" CornerRadius="8" BorderThickness="3" BorderBrush="Transparent"
+                                Background="Transparent" Padding="8">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                                <Setter TargetName="Frame" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                <Setter TargetName="Frame" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <conv:InverseBoolConverter x:Key="InverseBool" />
+        <Style x:Key="ListHeader" TargetType="ui:TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+
+        <!-- サムネイル表示(決定ログ G-5) -->
+        <ItemsPanelTemplate x:Key="GridPanel">
+            <ui:VirtualizingWrapPanel ItemSize="188,306" />
+        </ItemsPanelTemplate>
+        <DataTemplate x:Key="CardTemplate">
+            <StackPanel Width="156">
+                <Border Height="200" CornerRadius="4" BorderThickness="1" Background="White"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                    <Grid>
+                        <ui:SymbolIcon Symbol="DocumentPdf24" FontSize="40" Foreground="#99999999" />
+                        <Image Source="{Binding ThumbnailPath, Converter={StaticResource Thumbnail}}" Stretch="Uniform" />
+                    </Grid>
+                </Border>
+                <ui:TextBlock Text="{Binding Title}" Margin="0,6,0,0" TextWrapping="Wrap" MaxHeight="38"
+                              TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                <ui:TextBlock Text="{Binding FileName}" FontSize="11" TextTrimming="CharacterEllipsis"
+                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" ToolTip="{Binding FileName}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- リスト表示(決定ログ L-9)。列幅は見出しと同じ -->
+        <ItemsPanelTemplate x:Key="ListPanel">
+            <VirtualizingStackPanel />
+        </ItemsPanelTemplate>
+        <DataTemplate x:Key="RowTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="120" />
+                    <ColumnDefinition Width="130" />
+                    <ColumnDefinition Width="120" />
+                    <ColumnDefinition Width="86" />
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="80" />
+                </Grid.ColumnDefinitions>
+                <ui:TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" Margin="0,0,8,0" />
+                <ui:TextBlock Grid.Column="1" Text="{Binding FileName}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}" Margin="0,0,8,0"
+                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <ui:TextBlock Grid.Column="2" Text="{Binding TagText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TagText}" Margin="0,0,8,0" />
+                <ui:TextBlock Grid.Column="3" Text="{Binding RatingText}" Foreground="#F5A623" Margin="0,0,8,0" />
+                <ui:TextBlock Grid.Column="4" Text="{Binding RegisteredText}" Margin="0,0,8,0" />
+                <ui:TextBlock Grid.Column="5" Text="{Binding ViewCountText}" Margin="0,0,8,0" />
+                <ui:TextBlock Grid.Column="6" Text="{Binding LastViewedText}" />
+            </Grid>
+        </DataTemplate>
+        <Style x:Key="RowItem" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Row" BorderThickness="3,0,0,1" Padding="9,8,8,8" Background="Transparent"
+                                BorderBrush="Transparent">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                <Setter TargetName="Row" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DocumentListStyle" TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+            <Setter Property="ItemsPanel" Value="{StaticResource GridPanel}" />
+            <Setter Property="ItemTemplate" Value="{StaticResource CardTemplate}" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource ThumbnailItem}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsListView}" Value="True">
+                    <Setter Property="ItemsPanel" Value="{StaticResource ListPanel}" />
+                    <Setter Property="ItemTemplate" Value="{StaticResource RowTemplate}" />
+                    <Setter Property="ItemContainerStyle" Value="{StaticResource RowItem}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar x:Name="AppTitleBar" Grid.Row="0" Title="PdfManager" />
+
+        <!-- ツールバー -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,4,16,12">
+            <ui:Button Content="取り込み"
+                       Appearance="Primary"
+                       Icon="{ui:SymbolIcon DocumentAdd24}"
+                       Click="OnImportClick"
+                       ToolTip="PDF を選んで取り込みます(ファイルやフォルダを画面にドラッグ&amp;ドロップしても取り込めます)"
+                       Margin="0,0,8,0" />
+            <ui:Button Content="項目・タグ"
+                       Icon="{ui:SymbolIcon Tag24}"
+                       Click="OnManageCatalogClick"
+                       ToolTip="検索に使う項目と自由タグを管理します"
+                       Margin="0,0,8,0" />
+            <ui:Button Icon="{ui:SymbolIcon Settings24}" Click="OnSettingsClick" ToolTip="設定(ライブラリの切り替えなど)"
+                       AutomationProperties.Name="設定" />
+        </StackPanel>
+
+        <!-- 3 分割:絞り込み / 一覧 / 詳細 -->
+        <Grid Grid.Row="2" Margin="16,0,16,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280" MinWidth="220" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="*" MinWidth="360" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="320" MinWidth="260" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 左:絞り込み -->
+            <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,8">
+                            <ui:Button DockPanel.Dock="Right" Content="条件をクリア" Appearance="Transparent" Padding="6,2"
+                                       Command="{Binding ClearConditionsCommand}" />
+                            <ui:TextBlock Text="絞り込み" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                        </DockPanel>
+
+                        <!-- フリー検索(決定ログ I-1〜I-5) -->
+                        <ui:TextBox x:Name="SearchBox" PlaceholderText="キーワードで検索(Ctrl+F)" Icon="{ui:SymbolIcon Search24}"
+                                    Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="キーワード検索" />
+                        <ui:TextBlock Text="タイトル・タグ・ファイル名・項目の値から探します。ひらがな・カタカナ、全角・半角は区別しません。スペースで区切ると、すべてを含むものを探します。"
+                                      Style="{StaticResource SecondaryText}" FontSize="12" Margin="0,6,0,12" />
+
+                        <Expander Header="タグ" IsExpanded="True" Margin="0,0,0,8">
+                            <StackPanel>
+                                <ui:TextBlock Text="タグはまだありません" Style="{StaticResource SecondaryText}"
+                                              Visibility="{Binding HasTags, Converter={StaticResource InverseBoolToVisibility}}" />
+                                <StackPanel Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibility}}">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <RadioButton GroupName="TagMode" Content="すべて含む" Margin="0,0,12,0"
+                                                     IsChecked="{Binding IsTagAny, Converter={StaticResource InverseBool}}" />
+                                        <RadioButton GroupName="TagMode" Content="どれかを含む" IsChecked="{Binding IsTagAny}"
+                                                     AutomationProperties.Name="どれかを含む" />
+                                    </StackPanel>
+                                    <ui:TextBlock Text="チェック=含む/右クリック=除外。数字は今の結果の中の件数です。" Style="{StaticResource SecondaryText}" FontSize="12" Margin="0,0,0,4" />
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding TagFilters}" AutomationProperties.Name="絞り込みのタグ">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel Margin="0,1" Background="Transparent">
+                                                <DockPanel.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="{Binding ExcludeMenuText}" Command="{Binding ToggleExcludeCommand}" />
+                                                    </ContextMenu>
+                                                </DockPanel.ContextMenu>
+                                                <DockPanel.Style>
+                                                    <Style TargetType="DockPanel">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsZero}" Value="True">
+                                                                <Setter Property="Opacity" Value="0.5" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </DockPanel.Style>
+                                                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat={}{0:N0}}" Margin="8,0,0,0"
+                                                              VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <ui:TextBlock DockPanel.Dock="Right" Text="✕ 除外" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                              Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                                                              Visibility="{Binding IsExcluded, Converter={StaticResource BoolToVisibility}}" />
+                                                <CheckBox IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Tag.Name}">
+                                                    <StackPanel>
+                                                        <ui:TextBlock Text="{Binding Tag.Name}" TextTrimming="CharacterEllipsis" />
+                                                        <ui:TextBlock Text="{Binding Tag.AttributeText}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                                      Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                                            <ui:TextBlock.Style>
+                                                                <Style TargetType="ui:TextBlock">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Tag.AttributeText}" Value="">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </ui:TextBlock.Style>
+                                                        </ui:TextBlock>
+                                                    </StackPanel>
+                                                </CheckBox>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- 項目ごとの条件(決定ログ L-2) -->
+                        <Expander Header="項目" IsExpanded="True" Margin="0,0,0,8">
+                            <StackPanel>
+                                <ui:TextBlock Text="項目はまだ定義されていません" Style="{StaticResource SecondaryText}"
+                                              Visibility="{Binding HasFields, Converter={StaticResource InverseBoolToVisibility}}" />
+                                <ItemsControl ItemsSource="{Binding FieldFilters}" AutomationProperties.Name="絞り込みの項目">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,0,0,10">
+                                                <ui:TextBlock Text="{Binding Field.Name}" FontTypography="BodyStrong" Margin="0,0,0,4" />
+                                                <ui:TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="含む文字"
+                                                            AutomationProperties.Name="{Binding Field.Name}"
+                                                            Visibility="{Binding IsText, Converter={StaticResource BoolToVisibility}}" />
+                                                <Grid Visibility="{Binding IsRange, Converter={StaticResource BoolToVisibility}}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:TextBox Grid.Column="0" Text="{Binding From, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="{Binding RangeHint}"
+                                                                AutomationProperties.Name="{Binding Field.Name, StringFormat={}{0}(から)}" />
+                                                    <ui:TextBlock Grid.Column="1" Text="〜" VerticalAlignment="Center" Margin="4,0" />
+                                                    <ui:TextBox Grid.Column="2" Text="{Binding To, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="{Binding RangeHint}"
+                                                                AutomationProperties.Name="{Binding Field.Name, StringFormat={}{0}(まで)}" />
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding Options}" Visibility="{Binding IsSelect, Converter={StaticResource BoolToVisibility}}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <DockPanel Margin="0,1">
+                                                                <DockPanel.Style>
+                                                                    <Style TargetType="DockPanel">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsZero}" Value="True">
+                                                                                <Setter Property="Opacity" Value="0.5" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </DockPanel.Style>
+                                                                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat={}{0:N0}}" VerticalAlignment="Center"
+                                                                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                                <CheckBox Content="{Binding Value}" IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Value}" />
+                                                            </DockPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <ui:TextBlock Text="{Binding Error}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- 評価・登録日・最終閲覧日(決定ログ L-4) -->
+                        <Expander Header="評価" Margin="0,0,0,8">
+                            <ComboBox ItemsSource="{Binding RatingFilters}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedRatingFilter}"
+                                      AutomationProperties.Name="評価で絞り込み" />
+                        </Expander>
+                        <Expander Header="登録日" Margin="0,0,0,8">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:TextBox Grid.Column="0" Text="{Binding RegisteredFrom, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="2026-04-01"
+                                                AutomationProperties.Name="登録日(から)" />
+                                    <ui:TextBlock Grid.Column="1" Text="〜" VerticalAlignment="Center" Margin="4,0" />
+                                    <ui:TextBox Grid.Column="2" Text="{Binding RegisteredTo, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="2026-09-30"
+                                                AutomationProperties.Name="登録日(まで)" />
+                                </Grid>
+                                <ui:TextBlock Text="{Binding RegisteredError}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                            </StackPanel>
+                        </Expander>
+                        <Expander Header="最終閲覧日" Margin="0,0,0,8">
+                            <StackPanel>
+                                <Grid IsEnabled="{Binding NeverViewedOnly, Converter={StaticResource InverseBool}}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:TextBox Grid.Column="0" Text="{Binding LastViewedFrom, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="2026-04-01"
+                                                AutomationProperties.Name="最終閲覧日(から)" />
+                                    <ui:TextBlock Grid.Column="1" Text="〜" VerticalAlignment="Center" Margin="4,0" />
+                                    <ui:TextBox Grid.Column="2" Text="{Binding LastViewedTo, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="2026-09-30"
+                                                AutomationProperties.Name="最終閲覧日(まで)" />
+                                </Grid>
+                                <CheckBox Content="一度も開いていないもの" IsChecked="{Binding NeverViewedOnly}" Margin="0,6,0,0"
+                                          AutomationProperties.Name="一度も開いていないもの" />
+                                <ui:TextBlock Text="{Binding LastViewedError}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                            </StackPanel>
+                        </Expander>
+
+                        <Expander Header="項目" Margin="0,0,0,8">
+                            <StackPanel>
+                                <ui:TextBlock Text="項目はまだ定義されていません" Style="{StaticResource SecondaryText}"
+                                              Visibility="{Binding HasFields, Converter={StaticResource InverseBoolToVisibility}}" />
+                                <ui:TextBlock Text="項目の値はキーワード検索で探せます。項目ごとの条件(範囲など)は今後追加します。" Style="{StaticResource SecondaryText}" FontSize="12"
+                                              Margin="0,0,0,4" Visibility="{Binding HasFields, Converter={StaticResource BoolToVisibility}}" />
+                                <ItemsControl ItemsSource="{Binding Fields}" AutomationProperties.Name="絞り込みの項目">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel Margin="0,2">
+                                                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding TypeLabel}" Margin="8,0,0,0"
+                                                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <ui:TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="Transparent" ResizeBehavior="PreviousAndNext" />
+
+            <!-- 中央:サムネイル一覧(決定ログ I-3、G-5) -->
+            <Border Grid.Column="2" Style="{StaticResource PaneBorder}" Padding="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <ui:InfoBar Grid.Row="0" Margin="4,0,4,8" IsClosable="True" Severity="Success"
+                                Title="削除" Message="{Binding ListMessage}" IsOpen="{Binding IsListMessageOpen, Mode=TwoWay}" />
+                    <DockPanel Grid.Row="1" Margin="4,0,4,8">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <ComboBox ItemsSource="{Binding SortOptions}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedSort}"
+                                      MinWidth="140" AutomationProperties.Name="並び替え" />
+                            <ui:Button Content="{Binding SortDirectionText}" Command="{Binding ToggleSortDirectionCommand}" Margin="6,0,12,0"
+                                       Icon="{ui:SymbolIcon ArrowSort24}" ToolTip="昇順・降順を切り替えます" AutomationProperties.Name="並び順の向き" />
+                            <ui:Button Icon="{ui:SymbolIcon Grid24}" Command="{Binding ShowListCommand}" CommandParameter="grid"
+                                       ToolTip="サムネイルで表示" AutomationProperties.Name="サムネイル表示" Margin="0,0,4,0" />
+                            <ui:Button Icon="{ui:SymbolIcon AppsList24}" Command="{Binding ShowListCommand}" CommandParameter="list"
+                                       ToolTip="リストで表示" AutomationProperties.Name="リスト表示" />
+                        </StackPanel>
+                        <ui:TextBlock VerticalAlignment="Center" FontTypography="BodyStrong"
+                                      Text="{Binding ResultText}" AutomationProperties.AutomationId="ResultCount" />
+                    </DockPanel>
+
+                    <DockPanel Grid.Row="2" Visibility="{Binding HasDocuments, Converter={StaticResource BoolToVisibility}}">
+                        <!-- リスト表示の見出し(決定ログ L-9) -->
+                        <Grid DockPanel.Dock="Top" Margin="12,0,24,4" Visibility="{Binding IsListView, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="120" />
+                                <ColumnDefinition Width="130" />
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="86" />
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="80" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBlock Grid.Column="0" Text="タイトル" Style="{StaticResource ListHeader}" />
+                            <ui:TextBlock Grid.Column="1" Text="ファイル名" Style="{StaticResource ListHeader}" />
+                            <ui:TextBlock Grid.Column="2" Text="タグ" Style="{StaticResource ListHeader}" />
+                            <ui:TextBlock Grid.Column="3" Text="評価" Style="{StaticResource ListHeader}" />
+                            <ui:TextBlock Grid.Column="4" Text="登録日" Style="{StaticResource ListHeader}" />
+                            <ui:TextBlock Grid.Column="5" Text="閲覧" Style="{StaticResource ListHeader}" />
+                            <ui:TextBlock Grid.Column="6" Text="最終閲覧日" Style="{StaticResource ListHeader}" />
+                        </Grid>
+                        <ListBox x:Name="DocumentList" ItemsSource="{Binding Results}" SelectionMode="Extended" SelectionChanged="OnDocumentSelectionChanged" MouseDoubleClick="OnDocumentDoubleClick" PreviewKeyDown="OnDocumentListKeyDown"
+                                 Style="{StaticResource DocumentListStyle}" Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                 VirtualizingPanel.ScrollUnit="Pixel" AutomationProperties.Name="PDF の一覧">
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="開く" Click="OnOpenClick" InputGestureText="Enter">
+                                        <MenuItem.Icon>
+                                            <ui:SymbolIcon Symbol="Open24" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="削除" Click="OnDeleteClick" InputGestureText="Delete">
+                                        <MenuItem.Icon>
+                                            <ui:SymbolIcon Symbol="Delete24" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
+                        </ListBox>
+                    </DockPanel>
+
+                    <!-- 1 件も登録されていないとき -->
+                    <StackPanel Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Visibility="{Binding HasDocuments, Converter={StaticResource InverseBoolToVisibility}}">
+                        <ui:SymbolIcon Symbol="DocumentPdf24" FontSize="48" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                        <ui:TextBlock HorizontalAlignment="Center" Margin="0,12,0,4" FontTypography="Subtitle"
+                                      Text="{Binding DocumentSummaryText}" />
+                        <ui:TextBlock HorizontalAlignment="Center" Style="{StaticResource SecondaryText}"
+                                      Text="「取り込み」ボタン、またはファイルやフォルダのドラッグ&amp;ドロップで PDF を追加できます" />
+                    </StackPanel>
+
+                    <!-- 条件に合うものがないとき -->
+                    <StackPanel Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Visibility="{Binding HasNoResults, Converter={StaticResource BoolToVisibility}}">
+                        <ui:SymbolIcon Symbol="Search24" FontSize="40" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                        <ui:TextBlock HorizontalAlignment="Center" Margin="0,12,0,4" FontTypography="BodyStrong"
+                                      Text="条件に合う PDF がありません" />
+                        <ui:Button HorizontalAlignment="Center" Content="条件をクリア" Command="{Binding ClearConditionsCommand}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch" Background="Transparent" ResizeBehavior="PreviousAndNext" />
+
+            <!-- 右:詳細の表示と編集(決定ログ G-5、J-1〜J-7) -->
+            <Border Grid.Column="4" Style="{StaticResource PaneBorder}" Padding="0">
+                <Grid>
+                    <ui:TextBlock Text="一覧から PDF を選ぶと、ここに詳細が表示され、編集できます(Ctrl・Shift で複数選択)" Style="{StaticResource SecondaryText}"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" Margin="16"
+                                  Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVisibility}}" />
+                    <DockPanel Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
+                        <!-- 下部:保存・取り消し(決定ログ J-1) -->
+                        <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Padding="16,10">
+                            <DockPanel>
+                                <ui:Button DockPanel.Dock="Left" Icon="{ui:SymbolIcon Delete24}" Click="OnDeleteClick" Margin="0,0,8,0"
+                                           ToolTip="削除(Delete)" AutomationProperties.Name="削除" />
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <ui:Button Content="取り消し" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
+                                    <ui:Button Content="保存" Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Command="{Binding SaveCommand}"
+                                               AutomationProperties.Name="保存" />
+                                </StackPanel>
+                                <ui:TextBlock VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12" AutomationProperties.AutomationId="SaveStatus">
+                                    <ui:TextBlock.Style>
+                                        <Style TargetType="ui:TextBlock">
+                                            <Setter Property="Text" Value="{Binding SaveMessage}" />
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasChanges}" Value="True">
+                                                    <Setter Property="Text" Value="保存していない変更があります" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:TextBlock.Style>
+                                </ui:TextBlock>
+                            </DockPanel>
+                        </Border>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+                            <StackPanel>
+                                <DockPanel>
+                                    <ui:Button DockPanel.Dock="Right" Content="開く" Icon="{ui:SymbolIcon Open24}" Click="OnOpenClick"
+                                               ToolTip="ビューアで開きます(ダブルクリック・Enter でも開けます)" AutomationProperties.Name="開く" />
+                                    <ui:TextBlock Text="{Binding SelectionText}" FontTypography="BodyStrong" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                </DockPanel>
+                                <Border Height="220" CornerRadius="4" BorderThickness="1" Background="White" Margin="0,8,0,0"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        Visibility="{Binding SelectedInfo, Converter={StaticResource NullToCollapsed}}">
+                                    <Image Source="{Binding SelectedThumbnailPath, Converter={StaticResource Thumbnail}}" Stretch="Uniform" />
+                                </Border>
+
+                                <views:DocumentEditorView DataContext="{Binding Editor}" />
+
+                                <!-- 編集できない情報(決定ログ J-7) -->
+                                <StackPanel DataContext="{Binding SelectedInfo}"
+                                            Visibility="{Binding DataContext.SelectedInfo, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource NullToCollapsed}}">
+                                    <ui:TextBlock Text="情報" FontTypography="BodyStrong" Margin="0,16,0,6" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="100" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <ui:TextBlock Grid.Row="0" Text="元のファイル名" Style="{StaticResource InfoLabel}" />
+                                        <ui:TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding OriginalFileName}" TextWrapping="Wrap" />
+                                        <ui:TextBlock Grid.Row="1" Text="ページ数" Style="{StaticResource InfoLabel}" />
+                                        <ui:TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PageCount}" />
+                                        <ui:TextBlock Grid.Row="2" Text="ファイルサイズ" Style="{StaticResource InfoLabel}" />
+                                        <ui:TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding FileSize}" />
+                                        <ui:TextBlock Grid.Row="3" Text="登録日時" Style="{StaticResource InfoLabel}" />
+                                        <ui:TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Registered}" />
+                                        <ui:TextBlock Grid.Row="4" Text="閲覧回数" Style="{StaticResource InfoLabel}" />
+                                        <ui:TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ViewCount}" />
+                                        <ui:TextBlock Grid.Row="5" Text="最終閲覧日" Style="{StaticResource InfoLabel}" />
+                                        <ui:TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding LastViewed}" />
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DockPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

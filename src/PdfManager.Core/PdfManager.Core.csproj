@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PdfManager.Core.Tests" />
+  </ItemGroup>
+</Project>

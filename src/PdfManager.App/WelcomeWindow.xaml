@@ -1,0 +1,68 @@
+<ui:FluentWindow x:Class="PdfManager.App.WelcomeWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="PdfManager"
+                 Width="720" Height="560" MinWidth="560" MinHeight="460"
+                 WindowStartupLocation="CenterScreen"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="PdfManager" ShowMaximize="False" />
+
+        <DockPanel Grid.Row="1" Margin="32,8,32,24">
+            <StackPanel DockPanel.Dock="Top">
+                <ui:TextBlock Text="PdfManager へようこそ" FontTypography="Title" />
+                <ui:TextBlock Text="PDF を保存する「ライブラリ」を新しく作るか、既存のライブラリ(.pdflib)を開いてください。"
+                              TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,20" />
+                <UniformGrid Columns="2" Margin="0,0,0,24">
+                    <ui:CardAction Icon="{ui:SymbolIcon FolderAdd24}" Click="OnCreateClick" Margin="0,0,6,0"
+                                   AutomationProperties.Name="新しいライブラリを作る">
+                        <StackPanel>
+                            <ui:TextBlock Text="新しいライブラリを作る" FontTypography="BodyStrong" />
+                            <ui:TextBlock Text="保存するフォルダを選びます" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </ui:CardAction>
+                    <ui:CardAction Icon="{ui:SymbolIcon FolderOpen24}" Click="OnOpenClick" Margin="6,0,0,0"
+                                   AutomationProperties.Name="ライブラリを開く">
+                        <StackPanel>
+                            <ui:TextBlock Text="ライブラリを開く" FontTypography="BodyStrong" />
+                            <ui:TextBlock Text="他の人から受け取ったライブラリも開けます" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </ui:CardAction>
+                </UniformGrid>
+                <ui:TextBlock Text="最近使ったライブラリ" FontTypography="BodyStrong" Margin="0,0,0,8" />
+            </StackPanel>
+
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                <ui:Button Content="一覧から削除" Icon="{ui:SymbolIcon Dismiss24}" Click="OnForgetClick" Margin="0,0,8,0" />
+                <ui:Button Content="開く" Appearance="Primary" Icon="{ui:SymbolIcon FolderOpen24}" Click="OnOpenRecentClick"
+                           AutomationProperties.Name="選んだライブラリを開く" />
+            </StackPanel>
+
+            <Grid>
+                <ui:TextBlock x:Name="NoRecentText" Text="まだありません" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <ListBox x:Name="RecentList" MouseDoubleClick="OnOpenRecentClick" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="0,2">
+                                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Margin="12,0,0,0"
+                                              Foreground="{DynamicResource SystemFillColorCautionBrush}" VerticalAlignment="Center" />
+                                <StackPanel>
+                                    <ui:TextBlock Text="{Binding Name}" FontTypography="BodyStrong" />
+                                    <ui:TextBlock Text="{Binding Folder}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

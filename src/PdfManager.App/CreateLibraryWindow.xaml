@@ -1,0 +1,41 @@
+<ui:FluentWindow x:Class="PdfManager.App.CreateLibraryWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="新しいライブラリを作る"
+                 Width="620" SizeToContent="Height"
+                 ResizeMode="NoResize"
+                 WindowStartupLocation="CenterOwner"
+                 ShowInTaskbar="False"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <StackPanel>
+        <ui:TitleBar Title="新しいライブラリを作る" ShowMinimize="False" ShowMaximize="False" />
+        <StackPanel Margin="24,8,24,24">
+            <ui:TextBlock Text="ライブラリ名" FontTypography="BodyStrong" Margin="0,0,0,8" />
+            <ui:TextBox x:Name="NameBox" AutomationProperties.Name="ライブラリ名" PlaceholderText="例:PDF管理" TextChanged="OnInputChanged" />
+
+            <ui:TextBlock Text="作成する場所" FontTypography="BodyStrong" Margin="0,20,0,8" />
+            <DockPanel>
+                <ui:Button DockPanel.Dock="Right" Content="参照..." Icon="{ui:SymbolIcon FolderOpen24}" Click="OnBrowseClick" Margin="8,0,0,0" />
+                <ui:TextBox x:Name="ParentBox" AutomationProperties.Name="作成する場所" PlaceholderText="フォルダを選んでください" TextChanged="OnInputChanged" />
+            </DockPanel>
+            <ui:TextBlock Text="選んだフォルダの中に「PdfManager」フォルダが作られ、PDF やデータはすべてその中に保存されます。"
+                          TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
+
+            <Border Margin="0,16,0,0" Padding="12" CornerRadius="6"
+                    Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}">
+                <StackPanel>
+                    <ui:TextBlock Text="作成されるライブラリファイル" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <ui:TextBlock x:Name="PreviewText" Text="-" TextWrapping="Wrap" Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+                <ui:Button Content="キャンセル" IsCancel="True" Click="OnCancelClick" Margin="0,0,8,0" />
+                <ui:Button Content="作成" Appearance="Primary" Icon="{ui:SymbolIcon Add24}" IsDefault="True" Click="OnCreateClick" />
+            </StackPanel>
+        </StackPanel>
+    </StackPanel>
+</ui:FluentWindow>
