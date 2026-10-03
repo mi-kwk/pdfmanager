@@ -4,7 +4,7 @@ namespace PdfManager.Core.Database;
 
 public static class PdfManagerDatabase
 {
-    public const int SchemaVersion = 4;
+    public const int SchemaVersion = 5;
 
     public static SqliteConnection Open(string databasePath)
     {
@@ -46,6 +46,10 @@ public static class PdfManagerDatabase
         if (version < 4)
         {
             Execute(connection, Schema.V4, transaction);
+        }
+        if (version < 5)
+        {
+            Execute(connection, Schema.V5, transaction);
         }
         Execute(connection, $"PRAGMA user_version = {SchemaVersion};", transaction);
         transaction.Commit();

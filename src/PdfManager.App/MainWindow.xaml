@@ -83,6 +83,11 @@
                     <Grid>
                         <ui:SymbolIcon Symbol="DocumentPdf24" FontSize="40" Foreground="#99999999" />
                         <Image Source="{Binding ThumbnailPath, Converter={StaticResource Thumbnail}}" Stretch="Uniform" />
+                        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4" Padding="6,1" CornerRadius="4"
+                                Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                Visibility="{Binding HasVersion, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding VersionText}" Foreground="White" FontSize="11" />
+                        </Border>
                     </Grid>
                 </Border>
                 <ui:TextBlock Text="{Binding Title}" Margin="0,6,0,0" TextWrapping="Wrap" MaxHeight="38"
@@ -107,7 +112,14 @@
                     <ColumnDefinition Width="44" />
                     <ColumnDefinition Width="80" />
                 </Grid.ColumnDefinitions>
-                <ui:TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" Margin="0,0,8,0" />
+                <DockPanel Grid.Column="0" Margin="0,0,8,0">
+                    <Border DockPanel.Dock="Right" Margin="6,0,0,0" Padding="5,0" CornerRadius="4" VerticalAlignment="Center"
+                            Background="{DynamicResource AccentFillColorDefaultBrush}"
+                            Visibility="{Binding HasVersion, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{Binding VersionText}" Foreground="White" FontSize="11" />
+                    </Border>
+                    <ui:TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                </DockPanel>
                 <ui:TextBlock Grid.Column="1" Text="{Binding FileName}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}" Margin="0,0,8,0"
                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 <ui:TextBlock Grid.Column="2" Text="{Binding TagText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TagText}" Margin="0,0,8,0" />
@@ -204,7 +216,9 @@
                         <ui:TextBox x:Name="SearchBox" PlaceholderText="キーワードで検索(Ctrl+F)" Icon="{ui:SymbolIcon Search24}"
                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="キーワード検索" />
                         <ui:TextBlock Text="タイトル・タグ・ファイル名・項目の値から探します。ひらがな・カタカナ、全角・半角は区別しません。スペースで区切ると、すべてを含むものを探します。"
-                                      Style="{StaticResource SecondaryText}" FontSize="12" Margin="0,6,0,12" />
+                                      Style="{StaticResource SecondaryText}" FontSize="12" Margin="0,6,0,8" />
+                        <CheckBox Content="旧版も表示する" IsChecked="{Binding IncludeOldVersions}" Margin="0,0,0,12"
+                                  ToolTip="版のある PDF は、ふだんは最新版だけを表示します" AutomationProperties.Name="旧版も表示する" />
 
                         <Expander Header="タグ" IsExpanded="True" Margin="0,0,0,8">
                             <StackPanel>
@@ -443,6 +457,11 @@
                                             <ui:SymbolIcon Symbol="Open24" />
                                         </MenuItem.Icon>
                                     </MenuItem>
+                                    <MenuItem Header="版としてまとめる" Click="OnGroupVersionsClick">
+                                        <MenuItem.Icon>
+                                            <ui:SymbolIcon Symbol="Stack24" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
                                     <MenuItem Header="削除" Click="OnDeleteClick" InputGestureText="Delete">
                                         <MenuItem.Icon>
                                             <ui:SymbolIcon Symbol="Delete24" />
@@ -525,6 +544,62 @@
                                 </Border>
 
                                 <views:DocumentEditorView DataContext="{Binding Editor}" />
+
+                                <!-- 版の履歴(決定ログ N-1①・N-3・N-6・N-8) -->
+                                <StackPanel Visibility="{Binding IsSingleSelection, Converter={StaticResource BoolToVisibility}}">
+                                    <DockPanel Margin="0,16,0,6">
+                                        <ui:Button DockPanel.Dock="Right" Content="新しい版を追加" Icon="{ui:SymbolIcon DocumentAdd24}"
+                                                   Click="OnAddVersionClick" AutomationProperties.Name="新しい版を追加" />
+                                        <ui:TextBlock Text="版の履歴" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <ui:TextBlock Text="版はまだありません。「新しい版を追加」で改訂版を登録できます。" FontSize="12" TextWrapping="Wrap"
+                                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                  Visibility="{Binding HasVersions, Converter={StaticResource InverseBoolToVisibility}}" />
+                                    <ui:TextBlock Text="{Binding OldVersionNote}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"
+                                                  Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                                  Visibility="{Binding OldVersionNote, Converter={StaticResource NullToCollapsed}}" />
+                                    <ItemsControl ItemsSource="{Binding Versions}" AutomationProperties.Name="版の履歴">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="8,6" Margin="0,0,0,4" CornerRadius="6" BorderThickness="1"
+                                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                    <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <DockPanel>
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <ui:Button Icon="{ui:SymbolIcon Open24}" Padding="6,4" Margin="0,0,4,0" ToolTip="開く"
+                                                                       Tag="{Binding Info.DocumentId}" Click="OnOpenVersionClick"
+                                                                       AutomationProperties.Name="{Binding Info.DisplayName, StringFormat={}{0}を開く}" />
+                                                            <ui:Button Icon="{ui:SymbolIcon CursorClick24}" Padding="6,4" Margin="0,0,4,0" ToolTip="この版を選択"
+                                                                       Tag="{Binding Info.DocumentId}" Click="OnSelectVersionClick"
+                                                                       AutomationProperties.Name="{Binding Info.DisplayName, StringFormat={}{0}を選択}" />
+                                                            <ui:Button Icon="{ui:SymbolIcon LinkDismiss24}" Padding="6,4" ToolTip="版から外す"
+                                                                       Tag="{Binding Info.DocumentId}" Click="OnDetachVersionClick"
+                                                                       AutomationProperties.Name="{Binding Info.DisplayName, StringFormat={}{0}を版から外す}" />
+                                                        </StackPanel>
+                                                        <StackPanel>
+                                                            <ui:TextBlock Text="{Binding Text}" FontTypography="BodyStrong" />
+                                                            <ui:TextBlock Text="{Binding Sub}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <DockPanel Margin="0,4,0,0" Visibility="{Binding HasVersions, Converter={StaticResource BoolToVisibility}}">
+                                        <ui:TextBlock DockPanel.Dock="Left" Text="この版の名前" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <ui:TextBox Text="{Binding VersionLabel, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="任意(例:Rev.C)"
+                                                    AutomationProperties.Name="この版の名前" />
+                                    </DockPanel>
+                                </StackPanel>
 
                                 <!-- 編集できない情報(決定ログ J-7) -->
                                 <StackPanel DataContext="{Binding SelectedInfo}"

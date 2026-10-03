@@ -40,7 +40,13 @@ public sealed record ImportInput(
     long? FileNameSourceId,
     string FileNameSuffix,
     IReadOnlyDictionary<long, FieldValue> FieldValues,
-    IReadOnlyCollection<long> TagIds);
+    IReadOnlyCollection<long> TagIds)
+{
+    public string Memo { get; init; } = "";
+
+    // 決定ログ N-1①: この文書の新しい版として登録する
+    public string? NewVersionOf { get; init; }
+}
 
 public sealed record RegisteredImport(string? DocumentId, string? Warning, bool WasDuplicate);
 
@@ -179,11 +185,15 @@ public sealed class ImportService(DataFolder dataFolder)
             {
                 repository.Insert(
                     new NewDocument(documentId, input.Title, prepared.FileHash, prepared.OriginalFileName, prepared.FileSize, prepared.PageCount,
-                        input.FileName, input.FileNameSource, input.FileNameSourceId, input.FileNameSuffix),
+                        input.FileName, input.FileNameSource, input.FileNameSourceId, input.FileNameSuffix, input.Memo),
                     prepared.PageTexts,
                     DateTimeOffset.UtcNow,
                     input.FieldValues,
                     input.TagIds);
+                if (input.NewVersionOf is { } baseDocumentId)
+                {
+                    new VersionRepository(connection).AddNewestVersion(baseDocumentId, documentId);
+                }
             }
             catch
             {

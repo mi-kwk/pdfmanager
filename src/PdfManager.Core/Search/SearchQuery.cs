@@ -63,6 +63,9 @@ public sealed record SearchQuery
 
     public bool NeverViewedOnly { get; init; }
 
+    // 決定ログ N-5: 初期状態は最新版だけ
+    public bool IncludeOldVersions { get; init; }
+
     public SortKey Sort { get; init; } = SortKey.Registered;
 
     public long? SortFieldId { get; init; }
