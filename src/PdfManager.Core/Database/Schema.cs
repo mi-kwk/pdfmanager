@@ -6,6 +6,9 @@ namespace PdfManager.Core.Database;
 // docs/03_データ設計.md に対応。全文検索用の FTS5 索引は M3(検索)で追加する。
 internal static class Schema
 {
+    // 版の自由な名前(決定ログ N-3)
+    public const string V5 = "ALTER TABLE documents ADD COLUMN version_label TEXT NOT NULL DEFAULT '';";
+
     // 利用者向けのファイル名(決定ログ C-1、H-1、H-2)。既存の文書は元のファイル名をそのまま使う
     public const string V4 = """
         ALTER TABLE documents ADD COLUMN file_name TEXT NOT NULL DEFAULT '';

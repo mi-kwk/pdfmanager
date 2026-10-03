@@ -15,11 +15,11 @@ public partial class ImportWindow : FluentWindow
     private readonly IUserDialogs _dialogs;
     private bool _closeConfirmed;
 
-    public ImportWindow(DataFolder dataFolder, IEnumerable<string> paths)
+    public ImportWindow(DataFolder dataFolder, IEnumerable<string> paths, PdfManager.Core.Documents.DocumentDetail? newVersionOf = null)
     {
         InitializeComponent();
         _dialogs = new WpfUiDialogs(this);
-        _viewModel = new ImportViewModel(dataFolder, _dialogs, paths);
+        _viewModel = new ImportViewModel(dataFolder, _dialogs, paths, newVersionOf);
         DataContext = _viewModel;
         SystemThemeWatcher.Watch(this);
         Closing += OnClosing;
@@ -27,6 +27,8 @@ public partial class ImportWindow : FluentWindow
     }
 
     public int RegisteredCount => _viewModel.RegisteredCount;
+
+    public string? LastRegisteredId => _viewModel.LastRegisteredId;
 
     private void OnSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) =>
         _viewModel.SetSelection(ItemList.SelectedItems.Cast<ImportItem>());

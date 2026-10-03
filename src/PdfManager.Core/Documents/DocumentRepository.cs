@@ -21,7 +21,8 @@ public sealed record NewDocument(
     string FileName,
     FileNameSource FileNameSource = FileNameSource.None,
     long? FileNameSourceId = null,
-    string FileNameSuffix = "");
+    string FileNameSuffix = "",
+    string Memo = "");
 
 public sealed record DocumentDetail(
     string Id,
@@ -103,13 +104,14 @@ public sealed class DocumentRepository(SqliteConnection connection)
         using var transaction = connection.BeginTransaction();
 
         using (var command = Command(transaction, """
-            INSERT INTO documents (id, title, file_hash, original_file_name, file_size, page_count,
+            INSERT INTO documents (id, title, memo, file_hash, original_file_name, file_size, page_count,
                                    file_name, file_name_source_type, file_name_source_id, file_name_suffix, created_at, updated_at)
-            VALUES ($id, $title, $hash, $name, $size, $pages, $fileName, $sourceType, $sourceId, $suffix, $now, $now);
+            VALUES ($id, $title, $memo, $hash, $name, $size, $pages, $fileName, $sourceType, $sourceId, $suffix, $now, $now);
             """))
         {
             command.Parameters.AddWithValue("$id", document.Id);
             command.Parameters.AddWithValue("$title", document.Title);
+            command.Parameters.AddWithValue("$memo", document.Memo);
             command.Parameters.AddWithValue("$hash", document.FileHash);
             command.Parameters.AddWithValue("$name", document.OriginalFileName);
             command.Parameters.AddWithValue("$size", document.FileSize);

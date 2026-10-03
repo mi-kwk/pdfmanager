@@ -111,11 +111,12 @@ public partial class MainWindow : FluentWindow
 
     private void OnOpenClick(object sender, RoutedEventArgs e) => OpenSelectedInViewer();
 
-    private void OpenSelectedInViewer()
+    private void OpenSelectedInViewer() => OpenInViewer(DocumentList.SelectedItems.Cast<DocumentCard>()
+        .Select(c => new ViewerDocument(c.Entry.Id, c.Title, c.FileName, _viewModel.DataFolder.GetPdfPath(c.Entry.Id)))
+        .ToList());
+
+    private void OpenInViewer(IReadOnlyList<ViewerDocument> documents)
     {
-        var documents = DocumentList.SelectedItems.Cast<DocumentCard>()
-            .Select(c => new ViewerDocument(c.Entry.Id, c.Title, c.FileName, _viewModel.DataFolder.GetPdfPath(c.Entry.Id)))
-            .ToList();
         if (documents.Count == 0)
         {
             return;
@@ -126,6 +127,68 @@ public partial class MainWindow : FluentWindow
             _viewer.Closed += (_, _) => _viewer = null;
         }
         _viewer.Open(documents);
+    }
+
+    // ==== 版管理(決定ログ N-1〜N-8) ====
+
+    private async void OnGroupVersionsClick(object sender, RoutedEventArgs e)
+    {
+        var ids = DocumentList.SelectedItems.Cast<DocumentCard>().Select(c => c.Entry.Id).ToList();
+        if (await _viewModel.ResolvePendingChangesAsync())
+        {
+            await _viewModel.GroupAsVersionsAsync(ids);
+        }
+    }
+
+    private async void OnAddVersionClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SingleDetail is not { } previous || !await _viewModel.ResolvePendingChangesAsync())
+        {
+            return;
+        }
+        var dialog = new OpenFileDialog { Title = $"「{previous.Title}」の新しい版の PDF を選択", Filter = "PDF ファイル (*.pdf)|*.pdf" };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+        var window = new ImportWindow(_viewModel.DataFolder, [dialog.FileName], previous) { Owner = this };
+        window.ShowDialog();
+        _viewModel.Refresh();
+        if (window.LastRegisteredId is { } added)
+        {
+            SelectDocument(added);
+        }
+    }
+
+    private void OnOpenVersionClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.Versions.FirstOrDefault(v => v.Info.DocumentId == (string?)((FrameworkElement)sender).Tag) is { } row)
+        {
+            OpenInViewer([new ViewerDocument(row.Info.DocumentId, row.Info.Title, row.Info.FileName, _viewModel.DataFolder.GetPdfPath(row.Info.DocumentId))]);
+        }
+    }
+
+    private async void OnSelectVersionClick(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is string id && await _viewModel.ResolvePendingChangesAsync())
+        {
+            SelectDocument(id);
+        }
+    }
+
+    private async void OnDetachVersionClick(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is string id && await _viewModel.ResolvePendingChangesAsync())
+        {
+            await _viewModel.DetachVersionAsync(id);
+        }
+    }
+
+    // 旧版のように一覧に出ていない文書も、詳細エリアでは選べる
+    private void SelectDocument(string id)
+    {
+        _viewModel.SetSelection([id]);
+        RestoreSelection([id]);
     }
 
     private async void OnDeleteClick(object sender, RoutedEventArgs e) =>

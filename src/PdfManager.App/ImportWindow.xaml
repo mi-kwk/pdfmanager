@@ -49,14 +49,19 @@
         <ui:TitleBar Grid.Row="0" Title="取り込み" ShowMinimize="False" />
 
         <!-- 上部 -->
-        <DockPanel Grid.Row="1" Margin="16,0,16,12">
-            <ui:Button DockPanel.Dock="Left" Content="ファイルを追加" Icon="{ui:SymbolIcon DocumentAdd24}"
-                       Command="{Binding SelectFilesToAddCommand}" />
-            <ui:TextBlock DockPanel.Dock="Left" Text="ファイルやフォルダをこの画面にドラッグ&amp;ドロップしても追加できます"
-                          Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="12,0,0,0" />
-            <CheckBox DockPanel.Dock="Right" HorizontalAlignment="Right" IsChecked="{Binding DeleteOriginals}"
-                      Content="登録後に元のファイルをごみ箱へ移動" AutomationProperties.Name="登録後に元のファイルをごみ箱へ移動" />
-        </DockPanel>
+        <StackPanel Grid.Row="1" Margin="16,0,16,12">
+            <!-- 新しい版として登録するとき(決定ログ N-1①) -->
+            <ui:InfoBar Margin="0,0,0,8" IsClosable="False" Severity="Informational" Title="新しい版"
+                        Message="{Binding NewVersionText}" IsOpen="{Binding IsNewVersionMode, Mode=OneWay}" />
+            <DockPanel>
+                <ui:Button DockPanel.Dock="Left" Content="ファイルを追加" Icon="{ui:SymbolIcon DocumentAdd24}"
+                           Command="{Binding SelectFilesToAddCommand}" />
+                <ui:TextBlock DockPanel.Dock="Left" Text="ファイルやフォルダをこの画面にドラッグ&amp;ドロップしても追加できます"
+                              Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                <CheckBox DockPanel.Dock="Right" HorizontalAlignment="Right" IsChecked="{Binding DeleteOriginals}"
+                          Content="登録後に元のファイルをごみ箱へ移動" AutomationProperties.Name="登録後に元のファイルをごみ箱へ移動" />
+            </DockPanel>
+        </StackPanel>
 
         <Grid Grid.Row="2" Margin="16,0,16,0">
             <Grid.ColumnDefinitions>

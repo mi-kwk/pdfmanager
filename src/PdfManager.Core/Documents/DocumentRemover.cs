@@ -40,6 +40,8 @@ public sealed class DocumentRemover(DataFolder dataFolder, Action<string>? dispo
 
         using var connection = PdfManagerDatabase.Open(dataFolder.DatabasePath);
         new DocumentRepository(connection).Delete(documentId);
+        // 決定ログ N-7: 残った版はそのまま(1 つ前の版が最新版になる)。空になった版系列だけ消す
+        new VersionRepository(connection).DeleteEmptySeries();
     }
 
     private static string UniquePath(string folder, string baseName)

@@ -27,6 +27,18 @@ public sealed record DocumentCard(DocumentEntry Entry, string ThumbnailPath)
     public string ViewCountText => Entry.ViewCount.ToString("N0");
 
     public string LastViewedText => Entry.LastViewedAt?.ToLocalTime().ToString("yyyy/MM/dd") ?? "";
+
+    public string VersionText => Entry.VersionText;
+
+    public bool HasVersion => Entry.SeriesId is not null;
+}
+
+// 詳細エリアの「版の履歴」の 1 行(決定ログ N-6)
+public sealed record VersionRow(VersionInfo Info, bool IsCurrent, bool IsLatest)
+{
+    public string Text => Info.DisplayName + (IsLatest ? "(最新)" : "");
+
+    public string Sub => $"{Info.Title} ・ {Info.CreatedAt.ToLocalTime():yyyy/MM/dd}";
 }
 
 // 決定ログ J-7: 編集できない情報
@@ -52,6 +64,7 @@ public partial class MainViewModel : ObservableObject
     private DocumentSearchIndex? _index;
     private List<DetailItem> _detailItems = [];
     private bool _suspendSearch;
+    private bool _loadingDetails;
 
     public MainViewModel(DataFolder dataFolder, IUserDialogs dialogs, ViewPreferences view, Action<ViewPreferences> saveView)
     {
@@ -131,6 +144,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     public partial bool NeverViewedOnly { get; set; }
 
+    [ObservableProperty]
+    public partial bool IncludeOldVersions { get; set; }
+
     // ==== 一覧(決定ログ L-5、L-9) ====
 
     [ObservableProperty]
@@ -163,7 +179,7 @@ public partial class MainViewModel : ObservableObject
         || FieldFilters.Any(f => f.HasCondition)
         || SelectedRatingFilter != RatingChoices[0]
         || RegisteredFrom.Trim().Length > 0 || RegisteredTo.Trim().Length > 0
-        || LastViewedFrom.Trim().Length > 0 || LastViewedTo.Trim().Length > 0 || NeverViewedOnly;
+        || LastViewedFrom.Trim().Length > 0 || LastViewedTo.Trim().Length > 0 || NeverViewedOnly || IncludeOldVersions;
 
     public bool HasNoResults => HasDocuments && Results.Count == 0;
 
@@ -200,6 +216,69 @@ public partial class MainViewModel : ObservableObject
         only.Detail.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm"),
         $"{only.Detail.ViewCount:N0} 回",
         only.Detail.LastViewedAt?.ToLocalTime().ToString("yyyy/MM/dd HH:mm") ?? "(まだ開いていません)") : null;
+
+    // ==== 版の履歴(決定ログ N-1〜N-8) ====
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasVersions), nameof(OldVersionNote))]
+    public partial IReadOnlyList<VersionRow> Versions { get; set; } = [];
+
+    [ObservableProperty]
+    public partial string VersionLabel { get; set; } = "";
+
+    public bool IsSingleSelection => _detailItems.Count == 1;
+
+    public bool HasVersions => Versions.Count > 0;
+
+    public DocumentDetail? SingleDetail => _detailItems is [var only] ? only.Detail : null;
+
+    public string? OldVersionNote => Versions.FirstOrDefault(v => v.IsCurrent) is { IsLatest: false }
+        ? $"これは旧版です(最新は{Versions[^1].Info.DisplayName})。"
+        : null;
+
+    partial void OnVersionLabelChanged(string value)
+    {
+        if (!_loadingDetails)
+        {
+            HasChanges = true;
+            SaveMessage = null;
+        }
+    }
+
+    // 決定ログ N-8
+    public async Task DetachVersionAsync(string documentId)
+    {
+        var row = Versions.First(v => v.Info.DocumentId == documentId);
+        if (!await _dialogs.ConfirmAsync("版から外す", $"{row.Info.DisplayName}「{row.Info.Title}」を版から外し、独立した PDF に戻しますか?\n残りの版は第 1 版から番号を付け直します。", "外す"))
+        {
+            return;
+        }
+        using (var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath))
+        {
+            new VersionRepository(connection).Detach(documentId);
+        }
+        Refresh();
+    }
+
+    // 決定ログ N-1②
+    public async Task GroupAsVersionsAsync(IReadOnlyList<string> documentIds)
+    {
+        if (documentIds.Count < 2)
+        {
+            await _dialogs.ShowErrorAsync("版としてまとめるには、一覧で 2 件以上を選んでください(Ctrl・Shift で複数選択)。", "版としてまとめる");
+            return;
+        }
+        if (!await _dialogs.ConfirmAsync("版としてまとめる",
+                $"選んだ {documentIds.Count} 件(と、それらがすでに属している版)を 1 つの版にまとめますか?\n登録日の古い順に第 1 版、第 2 版…と番号を付けます。", "まとめる"))
+        {
+            return;
+        }
+        using (var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath))
+        {
+            new VersionRepository(connection).Group(documentIds);
+        }
+        Refresh();
+    }
 
     // 起動時と、取り込み画面・項目タグ管理画面を閉じたとき、保存したときに呼ぶ
     public void Refresh() => Refresh(null);
@@ -262,6 +341,8 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnNeverViewedOnlyChanged(bool value) => ApplySearch();
 
+    partial void OnIncludeOldVersionsChanged(bool value) => ApplySearch();
+
     partial void OnSelectedSortChanged(SortOption? value) => OnViewChanged();
 
     partial void OnSortDescendingChanged(bool value) => OnViewChanged();
@@ -307,6 +388,7 @@ public partial class MainViewModel : ObservableObject
             SelectedRatingFilter = RatingChoices[0];
             RegisteredFrom = RegisteredTo = LastViewedFrom = LastViewedTo = "";
             NeverViewedOnly = false;
+            IncludeOldVersions = false;
         }
         finally
         {
@@ -335,6 +417,7 @@ public partial class MainViewModel : ObservableObject
             LastViewedFrom = ParseDate(LastViewedFrom, out var viewedFromError),
             LastViewedTo = ParseDate(LastViewedTo, out var viewedToError),
             NeverViewedOnly = NeverViewedOnly,
+            IncludeOldVersions = IncludeOldVersions,
             Sort = SelectedSort?.Key ?? SortKey.Registered,
             SortFieldId = SelectedSort?.FieldId,
             Descending = SortDescending,
@@ -390,7 +473,19 @@ public partial class MainViewModel : ObservableObject
                 .ToList();
         }
         Editor.SetTargets(_detailItems);
+        _loadingDetails = true;
+        using (var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath))
+        {
+            var versions = _detailItems is [var only] ? new VersionRepository(connection).GetVersions(only.Detail.Id) : [];
+            Versions = versions.Select(v => new VersionRow(v, v.DocumentId == _detailItems[0].Detail.Id, v == versions[^1])).ToList();
+            VersionLabel = Versions.FirstOrDefault(v => v.IsCurrent)?.Info.Label ?? "";
+        }
+        _loadingDetails = false;
         HasChanges = false;
+        // 保存したときは、この後で「保存しました」を表示し直す
+        SaveMessage = null;
+        OnPropertyChanged(nameof(IsSingleSelection));
+        OnPropertyChanged(nameof(SingleDetail));
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectionText));
         OnPropertyChanged(nameof(SelectedThumbnailPath));
@@ -457,6 +552,10 @@ public partial class MainViewModel : ObservableObject
                     item.Detail.Id, DocumentEditor.TitleFor(item), item.Memo, item.Rating, Editor.FileNameFor(item),
                     source, sourceId, item.UseTitleAsFileName ? "" : item.Suffix, parsed[item],
                     item.TagKeys.Select(k => tagIds[k]).ToList()), DateTimeOffset.UtcNow);
+            }
+            if (items is [var single] && HasVersions)
+            {
+                new VersionRepository(connection).SetLabel(single.Detail.Id, VersionLabel);
             }
         }
         HasChanges = false;

@@ -3,7 +3,8 @@ using System.Text.Json;
 
 namespace PdfManager.Core.Settings;
 
-public sealed record RecentLibrary(string Name, string LibraryFilePath);
+// Id はライブラリファイルの ID。フォルダごと移動されても同じライブラリだと判断できる(決定ログ R-1)
+public sealed record RecentLibrary(string Name, string LibraryFilePath, Guid? Id = null);
 
 // 一覧の並び替えと表示の種類(決定ログ L-5、L-9)。項目での並び替えはライブラリごとの項目 ID なので、見つからなければ登録日に戻す
 public sealed record ViewPreferences(string Sort = "Registered", long? SortFieldId = null, bool Descending = true, bool ListView = false)
@@ -56,11 +57,11 @@ public sealed class AppSettingsStore(string directory)
         File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
     }
 
-    public static AppSettings RememberOpened(AppSettings settings, string name, string libraryFilePath)
+    public static AppSettings RememberOpened(AppSettings settings, string name, string libraryFilePath, Guid? id = null)
     {
         var recent = settings.RecentLibraries
-            .Where(r => !SamePath(r.LibraryFilePath, libraryFilePath))
-            .Prepend(new RecentLibrary(name, libraryFilePath))
+            .Where(r => !SamePath(r.LibraryFilePath, libraryFilePath) && (id is null || r.Id != id))
+            .Prepend(new RecentLibrary(name, libraryFilePath, id))
             .Take(MaxRecentLibraries)
             .ToList();
         return settings with { LastLibraryFilePath = libraryFilePath, RecentLibraries = recent };

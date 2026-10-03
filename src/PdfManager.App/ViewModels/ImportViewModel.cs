@@ -28,8 +28,12 @@ public partial class ImportViewModel : ObservableObject, IDisposable
     private List<ImportItem> _selection = [];
     private bool _preparing;
 
-    public ImportViewModel(DataFolder dataFolder, IUserDialogs dialogs, IEnumerable<string> paths)
+    private readonly DocumentDetail? _newVersionOf;
+
+    // newVersionOf を渡すと、その文書の新しい版として 1 件だけ登録する(決定ログ N-1①、N-2)
+    public ImportViewModel(DataFolder dataFolder, IUserDialogs dialogs, IEnumerable<string> paths, DocumentDetail? newVersionOf = null)
     {
+        _newVersionOf = newVersionOf;
         _dataFolder = dataFolder;
         _service = new ImportService(dataFolder);
         _dialogs = dialogs;
@@ -46,6 +50,12 @@ public partial class ImportViewModel : ObservableObject, IDisposable
     public ObservableCollection<ImportItem> Items { get; } = [];
 
     public int RegisteredCount { get; private set; }
+
+    public string? LastRegisteredId { get; private set; }
+
+    public bool IsNewVersionMode => _newVersionOf is not null;
+
+    public string? NewVersionText => _newVersionOf is null ? null : $"「{_newVersionOf.Title}」の新しい版として登録します。前の版のタイトル・ファイル名の作り方・項目・タグ・メモを引き継いでいます(変更できます)。";
 
     public int ReadyCount => Items.Count(i => i.IsReady);
 
@@ -112,6 +122,11 @@ public partial class ImportViewModel : ObservableObject, IDisposable
             ShowResult(InfoBarSeverity.Warning, "追加できるファイルがありません", "PDF ファイルが見つかりませんでした。");
             return;
         }
+        if (IsNewVersionMode && (Items.Count > 0 || files.Count > 1))
+        {
+            ShowResult(InfoBarSeverity.Informational, "新しい版は 1 件ずつ登録します", "最初の 1 件だけを使います。");
+            files = Items.Count > 0 ? [] : files.Take(1).ToList();
+        }
         foreach (var path in files.Where(f => Items.All(i => !string.Equals(i.SourcePath, f, StringComparison.OrdinalIgnoreCase))))
         {
             Items.Add(new ImportItem(path));
@@ -153,6 +168,10 @@ public partial class ImportViewModel : ObservableObject, IDisposable
                 if (item.IsReady)
                 {
                     item.Prefix = _lastInput?.Prefix;
+                    if (_newVersionOf is not null)
+                    {
+                        CopyFromPreviousVersion(item, new DetailItem(_newVersionOf, _fields, Editor.TagKeyOf));
+                    }
                 }
                 NotifyCounts();
                 if (_selection.Contains(item))
@@ -198,6 +217,23 @@ public partial class ImportViewModel : ObservableObject, IDisposable
         Editor.SetTargets(Editable);
         OnPropertyChanged(nameof(HasEditableSelection));
         OnPropertyChanged(nameof(SelectionText));
+    }
+
+    private static void CopyFromPreviousVersion(ImportItem item, DetailItem previous)
+    {
+        item.Title = previous.Title;
+        item.UseTitleAsFileName = previous.UseTitleAsFileName;
+        item.Prefix = previous.Prefix;
+        item.Suffix = previous.Suffix;
+        item.Memo = previous.Memo;
+        foreach (var (fieldId, text) in previous.FieldInputs)
+        {
+            item.FieldInputs[fieldId] = text;
+        }
+        foreach (var key in previous.TagKeys)
+        {
+            item.TagKeys.Add(key);
+        }
     }
 
     [RelayCommand]
@@ -277,7 +313,11 @@ public partial class ImportViewModel : ObservableObject, IDisposable
                 {
                     var (source, sourceId) = Editor.FileNameSourceFor(item, tagIds);
                     var input = new ImportInput(DocumentEditor.TitleFor(item), Editor.FileNameFor(item), source, sourceId,
-                        item.UseTitleAsFileName ? "" : item.Suffix, parsedValues[item], item.TagKeys.Select(k => tagIds[k]).ToList());
+                        item.UseTitleAsFileName ? "" : item.Suffix, parsedValues[item], item.TagKeys.Select(k => tagIds[k]).ToList())
+                    {
+                        Memo = item.Memo,
+                        NewVersionOf = _newVersionOf?.Id,
+                    };
                     var result = await Task.Run(() => _service.RegisterAsync(item.Prepared!, input));
                     if (result.WasDuplicate)
                     {
@@ -286,6 +326,7 @@ public partial class ImportViewModel : ObservableObject, IDisposable
                         continue;
                     }
                     registered++;
+                    LastRegisteredId = result.DocumentId;
                     // 何も入力していない PDF で「前回」を上書きしないよう、入力があったものだけを覚える
                     if (item.FieldInputs.Count > 0 || item.TagKeys.Count > 0 || item.Prefix is not null)
                     {

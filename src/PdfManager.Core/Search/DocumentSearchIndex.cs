@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Microsoft.Data.Sqlite;
 using PdfManager.Core.Catalog;
+using PdfManager.Core.Documents;
 using PdfManager.Core.Text;
 
 namespace PdfManager.Core.Search;
@@ -23,6 +24,17 @@ public sealed record DocumentEntry(
     public DateTimeOffset? LastViewedAt { get; init; }
 
     public IReadOnlyDictionary<long, FieldValue> RawFieldValues { get; init; } = new Dictionary<long, FieldValue>();
+
+    // 版管理(決定ログ N-4、N-5)
+    public string? SeriesId { get; init; }
+
+    public int VersionNo { get; init; }
+
+    public string VersionLabel { get; init; } = "";
+
+    public bool IsLatest { get; init; } = true;
+
+    public string VersionText => SeriesId is null ? "" : VersionNames.Format(VersionNo, VersionLabel) + (IsLatest ? "" : "・旧版");
 }
 
 // 検索(docs/04「検索」、決定ログ I-1〜I-6、L-1〜L-5)。件数が数万件でも一瞬で探せるよう、検索用の文字と条件に使う値をメモリに持つ
@@ -61,7 +73,12 @@ public sealed class DocumentSearchIndex
         }
 
         var entries = Query(connection,
-            "SELECT id, title, file_name, created_at, page_count, memo, rating, view_count, last_viewed_at FROM documents ORDER BY created_at DESC, id;",
+            """
+            SELECT d.id, d.title, d.file_name, d.created_at, d.page_count, d.memo, d.rating, d.view_count, d.last_viewed_at,
+                   d.series_id, d.version_no, d.version_label,
+                   d.series_id IS NULL OR d.version_no = (SELECT MAX(version_no) FROM documents s WHERE s.series_id = d.series_id)
+            FROM documents d ORDER BY d.created_at DESC, d.id;
+            """,
             r =>
             {
                 var id = r.GetString(0);
@@ -79,6 +96,10 @@ public sealed class DocumentSearchIndex
                     ViewCount = r.GetInt64(7),
                     LastViewedAt = r.IsDBNull(8) ? null : DateTimeOffset.Parse(r.GetString(8), CultureInfo.InvariantCulture),
                     RawFieldValues = documentFields.ToDictionary(f => f.FieldId, f => f.Value),
+                    SeriesId = r.IsDBNull(9) ? null : r.GetString(9),
+                    VersionNo = r.IsDBNull(10) ? 0 : r.GetInt32(10),
+                    VersionLabel = r.GetString(11),
+                    IsLatest = r.GetBoolean(12),
                 };
                 // 決定ログ I-2・J-6: タイトル・タグ名・ファイル名・項目の値・メモを対象にする
                 var text = Normalize(string.Join('\n',
@@ -98,7 +119,7 @@ public sealed class DocumentSearchIndex
         var matches = _entries
             .Where(e => terms.All(t => e.Text.Contains(t, StringComparison.Ordinal)))
             .Select(e => e.Entry)
-            .Where(e => MatchesTags(e, query) && MatchesFields(e, query.FieldConditions) && MatchesRatingAndDates(e, query));
+            .Where(e => (e.IsLatest || query.IncludeOldVersions) && MatchesTags(e, query) && MatchesFields(e, query.FieldConditions) && MatchesRatingAndDates(e, query));
         return Sort(matches, query).ToList();
     }
 

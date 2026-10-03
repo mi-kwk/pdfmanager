@@ -92,7 +92,7 @@ public sealed class LibraryActions(AppSettingsStore store)
 
     private void Remember(LibraryInfo library)
     {
-        Settings = AppSettingsStore.RememberOpened(Settings, library.Name, library.LibraryFilePath);
+        Settings = AppSettingsStore.RememberOpened(Settings, library.Name, library.LibraryFilePath, library.Id);
         store.Save(Settings);
     }
 }
