@@ -11,6 +11,7 @@ public partial class ManageWindow : FluentWindow
     public ManageWindow(DataFolder dataFolder)
     {
         InitializeComponent();
+        WindowPlacement.KeepOnScreen(this);
         DataContext = new ManageViewModel(dataFolder, new WpfUiDialogs(this));
         SystemThemeWatcher.Watch(this);
     }

@@ -10,9 +10,52 @@ namespace PdfManager.App.ViewModels;
 
 public sealed record FieldTypeChoice(FieldType Type, string Label);
 
-// SC-04 項目・タグ管理
+public sealed record RankChoice(int Rank, string Label);
+
+// タグの所属先の選択肢。Id が null は自由タグ
+public sealed record GroupChoice(long? Id, string Label);
+
+// タグの紐づけ先の候補 1 つ分(決定ログ Q-3)。チェックはすぐに保存する
+public sealed partial class ParentChoice : ObservableObject
+{
+    private readonly Action _onToggled;
+    private readonly bool _loading;
+
+    public ParentChoice(long tagId, string name, string groupName, bool isChecked, Action onToggled)
+    {
+        TagId = tagId;
+        Name = name;
+        GroupName = groupName;
+        _onToggled = onToggled;
+        _loading = true;
+        IsChecked = isChecked;
+        _loading = false;
+    }
+
+    public long TagId { get; }
+
+    public string Name { get; }
+
+    public string GroupName { get; }
+
+    [ObservableProperty]
+    public partial bool IsChecked { get; set; }
+
+    partial void OnIsCheckedChanged(bool value)
+    {
+        if (!_loading)
+        {
+            _onToggled();
+        }
+    }
+}
+
+// SC-04 項目・タグ管理(決定ログ R-11、Q-1〜Q-14)
 public partial class ManageViewModel : ObservableObject
 {
+    private static readonly GroupChoice AllGroups = new(-1, "すべてのグループ");
+    private static readonly GroupChoice FreeTags = new(null, "自由タグ");
+
     private readonly DataFolder _dataFolder;
     private readonly IUserDialogs _dialogs;
     private IReadOnlyList<TagSummary> _allTags = [];
@@ -22,22 +65,377 @@ public partial class ManageViewModel : ObservableObject
         _dataFolder = dataFolder;
         _dialogs = dialogs;
         NewFieldType = FieldTypeChoices[0];
+        NewGroupRank = RankChoices[0];
+        TagGroupFilter = AllGroups;
+        NewTagGroup = FreeTags;
+        ReloadAll();
         ReloadFields();
     }
 
-    public IReadOnlyList<FieldTypeChoice> FieldTypeChoices { get; } =
-        FieldTypes.All.Select(t => new FieldTypeChoice(t, FieldTypes.DisplayName(t))).ToList();
+    // 補助項目の型(選択肢型はタググループに変わったため作らない、決定ログ Q-6)
+    public IReadOnlyList<FieldTypeChoice> FieldTypeChoices { get; } = FieldTypes.All
+        .Where(t => t != FieldType.Select)
+        .Select(t => new FieldTypeChoice(t, FieldTypes.DisplayName(t)))
+        .ToList();
 
-    // ---- 項目 ----
+    public IReadOnlyList<RankChoice> RankChoices { get; } = TagRanks.All.Select(r => new RankChoice(r, TagRanks.Label(r))).ToList();
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasAttributeFields))]
+    public partial IReadOnlyList<TagGroup> Groups { get; set; } = [];
+
+    // タグの所属先(自由タグ + 各グループ)
+    [ObservableProperty]
+    public partial IReadOnlyList<GroupChoice> GroupChoices { get; set; } = [];
+
+    // ==== 項目(左に常に表示するタググループ、決定ログ Q-14) ====
+
+    [ObservableProperty]
+    public partial IReadOnlyList<TagGroup> Items { get; set; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsItemSelected))]
+    public partial TagGroup? SelectedItem { get; set; }
+
+    [ObservableProperty]
+    public partial IReadOnlyList<TagGroup> ItemCandidates { get; set; } = [];
+
+    [ObservableProperty]
+    public partial TagGroup? NewItemGroup { get; set; }
+
+    public bool IsItemSelected => SelectedItem is not null;
+
+    [RelayCommand]
+    private async Task AddItemAsync()
+    {
+        if (NewItemGroup is not { } group)
+        {
+            await _dialogs.ShowErrorAsync("項目にするタググループを選んでください(タググループは「タググループ」タブで作れます)。");
+            return;
+        }
+        if (await RunAsync(c => c.SetGroupPinned(group.Id, true)))
+        {
+            ReloadAll(selectItemId: group.Id);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RemoveItemAsync()
+    {
+        if (SelectedItem is { } item && await RunAsync(c => c.SetGroupPinned(item.Id, false)))
+        {
+            ReloadAll();
+        }
+    }
+
+    [RelayCommand]
+    private Task MoveItemUpAsync() => MoveItemAsync(-1);
+
+    [RelayCommand]
+    private Task MoveItemDownAsync() => MoveItemAsync(1);
+
+    private async Task MoveItemAsync(int offset)
+    {
+        if (SelectedItem is { } item && await RunAsync(c => c.MovePinnedGroup(item.Id, offset)))
+        {
+            ReloadAll(selectItemId: item.Id);
+        }
+    }
+
+    // ==== タググループ(決定ログ Q-1、Q-2、Q-13) ====
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGroupSelected))]
+    public partial TagGroup? SelectedGroup { get; set; }
+
+    [ObservableProperty]
+    public partial string NewGroupName { get; set; } = "";
+
+    [ObservableProperty]
+    public partial RankChoice NewGroupRank { get; set; }
+
+    [ObservableProperty]
+    public partial string EditGroupName { get; set; } = "";
+
+    [ObservableProperty]
+    public partial RankChoice? EditGroupRank { get; set; }
+
+    [ObservableProperty]
+    public partial string GroupTagsText { get; set; } = "";
+
+    public bool IsGroupSelected => SelectedGroup is not null;
+
+    partial void OnSelectedGroupChanged(TagGroup? value)
+    {
+        EditGroupName = value?.Name ?? "";
+        EditGroupRank = value is null ? null : RankChoices.First(r => r.Rank == value.Rank);
+        var names = value is null ? [] : _allTags.Where(t => t.GroupId == value.Id).Select(t => t.Name).ToList();
+        GroupTagsText = value is null ? "" : names.Count == 0 ? "(タグはまだありません)" : string.Join("、", names);
+    }
+
+    [RelayCommand]
+    private async Task AddGroupAsync()
+    {
+        long id = 0;
+        if (await RunAsync(c => id = c.AddGroup(NewGroupName, NewGroupRank.Rank)))
+        {
+            NewGroupName = "";
+            ReloadAll(selectGroupId: id);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RenameGroupAsync()
+    {
+        if (SelectedGroup is { } group && await RunAsync(c => c.RenameGroup(group.Id, EditGroupName)))
+        {
+            ReloadAll(selectGroupId: group.Id);
+        }
+    }
+
+    [RelayCommand]
+    private async Task ChangeGroupRankAsync()
+    {
+        if (SelectedGroup is not { } group || EditGroupRank is not { } rank || rank.Rank == group.Rank)
+        {
+            return;
+        }
+        long broken = 0;
+        if (!await RunAsync(c => broken = c.CountLinksBrokenByRank(group.Id, rank.Rank))
+            || (broken > 0 && !await _dialogs.ConfirmAsync("順位の変更",
+                $"「{group.Name}」を「{rank.Label}」にすると、合わなくなる紐づけ {broken} 件が外れます。変更しますか?", "変更する")))
+        {
+            return;
+        }
+        if (await RunAsync(c => c.ChangeGroupRank(group.Id, rank.Rank)))
+        {
+            ReloadAll(selectGroupId: group.Id);
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteGroupAsync()
+    {
+        if (SelectedGroup is not { } group)
+        {
+            return;
+        }
+        var impact = group.TagCount > 0 ? $"\nこのグループのタグ {group.TagCount} 件は自由タグになります(文書のタグはそのまま)。紐づけは外れます。" : "";
+        if (await _dialogs.ConfirmAsync("タググループの削除", $"タググループ「{group.Name}」を削除しますか?{impact}", "削除する")
+            && await RunAsync(c => c.DeleteGroup(group.Id)))
+        {
+            ReloadAll();
+        }
+    }
+
+    [RelayCommand]
+    private Task MoveGroupUpAsync() => MoveGroupAsync(-1);
+
+    [RelayCommand]
+    private Task MoveGroupDownAsync() => MoveGroupAsync(1);
+
+    private async Task MoveGroupAsync(int offset)
+    {
+        if (SelectedGroup is { } group && await RunAsync(c => c.MoveGroup(group.Id, offset)))
+        {
+            ReloadAll(selectGroupId: group.Id);
+        }
+    }
+
+    // ==== タグ ====
+
+    [ObservableProperty]
+    public partial IReadOnlyList<TagSummary> VisibleTags { get; set; } = [];
+
+    [ObservableProperty]
+    public partial string TagFilter { get; set; } = "";
+
+    // タグ一覧の絞り込み(すべて/自由タグ/各グループ)
+    [ObservableProperty]
+    public partial IReadOnlyList<GroupChoice> TagGroupFilters { get; set; } = [];
+
+    [ObservableProperty]
+    public partial GroupChoice TagGroupFilter { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsTagSelected))]
+    public partial TagSummary? SelectedTag { get; set; }
+
+    [ObservableProperty]
+    public partial string NewTagName { get; set; } = "";
+
+    [ObservableProperty]
+    public partial GroupChoice NewTagGroup { get; set; }
+
+    [ObservableProperty]
+    public partial string EditTagName { get; set; } = "";
+
+    [ObservableProperty]
+    public partial GroupChoice? EditTagGroup { get; set; }
+
+    [ObservableProperty]
+    public partial IReadOnlyList<TagSummary> MergeTargets { get; set; } = [];
+
+    [ObservableProperty]
+    public partial TagSummary? MergeTarget { get; set; }
+
+    [ObservableProperty]
+    public partial int TagCount { get; set; }
+
+    [ObservableProperty]
+    public partial IReadOnlyList<ParentChoice> ParentChoices { get; set; } = [];
+
+    [ObservableProperty]
+    public partial string ParentFilter { get; set; } = "";
+
+    [ObservableProperty]
+    public partial string ParentHint { get; set; } = "";
+
+    // 選んだタグが紐づけを持てる(順位 2〜5 のグループにある)か
+    [ObservableProperty]
+    public partial bool CanHaveParents { get; set; }
+
+    public bool IsTagSelected => SelectedTag is not null;
+
+    partial void OnTagFilterChanged(string value) => ApplyTagFilter(SelectedTag?.Id);
+
+    partial void OnTagGroupFilterChanged(GroupChoice value) => ApplyTagFilter(SelectedTag?.Id);
+
+    partial void OnParentFilterChanged(string value) => BuildParentChoices();
+
+    partial void OnSelectedTagChanged(TagSummary? value)
+    {
+        EditTagName = value?.Name ?? "";
+        EditTagGroup = value is null ? null : GroupChoices.FirstOrDefault(c => c.Id == value.GroupId);
+        MergeTargets = value is null ? [] : _allTags.Where(t => t.Id != value.Id).ToList();
+        MergeTarget = null;
+        ParentFilter = "";
+        BuildParentChoices();
+    }
+
+    // 決定ログ Q-3: 紐づけられるのは、1 つ上の順位のタググループのタグ
+    private void BuildParentChoices()
+    {
+        var rank = SelectedTag?.GroupId is { } groupId ? Groups.FirstOrDefault(g => g.Id == groupId)?.Rank : null;
+        CanHaveParents = SelectedTag is not null && rank is >= 2;
+        if (SelectedTag is not { } tag || rank is not >= 2)
+        {
+            ParentChoices = [];
+            ParentHint = SelectedTag is null ? "" : "紐づけは、順位 2〜5 のタググループのタグだけが持てます(1 つ上の順位のタグに紐づけます)。";
+            return;
+        }
+        var parentGroups = Groups.Where(g => g.Rank == rank - 1).ToDictionary(g => g.Id, g => g.Name);
+        var filter = NameNormalizer.Normalize(ParentFilter);
+        ParentChoices = _allTags
+            .Where(t => t.GroupId is { } g && parentGroups.ContainsKey(g))
+            .Where(t => tag.ParentIds.Contains(t.Id) || filter.Length == 0 || NameNormalizer.Normalize(t.Name).Contains(filter, StringComparison.Ordinal))
+            .OrderByDescending(t => tag.ParentIds.Contains(t.Id))
+            .Select(t => new ParentChoice(t.Id, t.Name, parentGroups[t.GroupId!.Value], tag.ParentIds.Contains(t.Id), OnParentToggled))
+            .ToList();
+        ParentHint = parentGroups.Count == 0
+            ? $"「{TagRanks.Label(rank.Value - 1)}」のタググループがありません。「タググループ」タブで作ってください。"
+            : $"「{TagRanks.Label(rank.Value - 1)}」のタグから選びます(複数可)。チェックはすぐに保存されます。";
+    }
+
+    private async void OnParentToggled()
+    {
+        if (SelectedTag is not { } tag)
+        {
+            return;
+        }
+        var parentIds = ParentChoices.Where(c => c.IsChecked).Select(c => c.TagId)
+            // 絞り込みで見えていない紐づけ先は残す
+            .Concat(tag.ParentIds.Where(id => ParentChoices.All(c => c.TagId != id)))
+            .ToList();
+        if (await RunAsync(c => c.SetTagParents(tag.Id, parentIds)))
+        {
+            ReloadAll(selectTagId: tag.Id, keepParentFilter: true);
+        }
+    }
+
+    [RelayCommand]
+    private async Task AddTagAsync()
+    {
+        long id = 0;
+        if (await RunAsync(c => id = c.AddTag(NewTagName, NewTagGroup.Id)))
+        {
+            NewTagName = "";
+            TagFilter = "";
+            ReloadAll(selectTagId: id);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RenameTagAsync()
+    {
+        if (SelectedTag is { } tag && await RunAsync(c => c.RenameTag(tag.Id, EditTagName)))
+        {
+            ReloadAll(selectTagId: tag.Id);
+        }
+    }
+
+    [RelayCommand]
+    private async Task ChangeTagGroupAsync()
+    {
+        if (SelectedTag is not { } tag || EditTagGroup is not { } group || group.Id == tag.GroupId)
+        {
+            return;
+        }
+        long broken = 0;
+        if (!await RunAsync(c => broken = c.CountLinksBrokenByTagGroup(tag.Id, group.Id))
+            || (broken > 0 && !await _dialogs.ConfirmAsync("グループの変更",
+                $"「{tag.Name}」を「{group.Label}」に移すと、合わなくなる紐づけ {broken} 件が外れます。移しますか?", "移す")))
+        {
+            return;
+        }
+        if (await RunAsync(c => c.SetTagGroup(tag.Id, group.Id)))
+        {
+            ReloadAll(selectTagId: tag.Id);
+        }
+    }
+
+    [RelayCommand]
+    private async Task MergeTagAsync()
+    {
+        if (SelectedTag is not { } source)
+        {
+            return;
+        }
+        if (MergeTarget is not { } target)
+        {
+            await _dialogs.ShowErrorAsync("統合先のタグを選んでください。");
+            return;
+        }
+        if (await _dialogs.ConfirmAsync("タグの統合",
+                $"「{source.Name}」を「{target.Name}」に統合しますか?\n「{source.Name}」が付いた文書 {source.UsageCount} 件には「{target.Name}」が付き、「{source.Name}」は削除されます。紐づけも引き継ぎます。",
+                "統合する")
+            && await RunAsync(c => c.MergeTags(source.Id, target.Id)))
+        {
+            ReloadAll(selectTagId: target.Id);
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteTagAsync()
+    {
+        if (SelectedTag is not { } tag)
+        {
+            return;
+        }
+        var impact = tag.UsageCount > 0 ? $"\nこのタグが付いた文書 {tag.UsageCount} 件から、タグが外れます(文書は削除されません)。" : "";
+        if (await _dialogs.ConfirmAsync("タグの削除", $"タグ「{tag.Name}」を削除しますか?{impact}", "削除する")
+            && await RunAsync(c => c.DeleteTag(tag.Id)))
+        {
+            ReloadAll();
+        }
+    }
+
+    // ==== 補助項目(年月・日付・数値・文字、決定ログ Q-6) ====
+
+    [ObservableProperty]
     public partial IReadOnlyList<FieldDefinition> Fields { get; set; } = [];
 
-    public bool HasAttributeFields => Fields.Any(f => f.Type == FieldType.Select);
-
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsFieldSelected), nameof(IsSelectField), nameof(CanChangeFieldType))]
+    [NotifyPropertyChangedFor(nameof(IsFieldSelected), nameof(CanChangeFieldType))]
     public partial FieldDefinition? SelectedField { get; set; }
 
     [ObservableProperty]
@@ -52,32 +450,15 @@ public partial class ManageViewModel : ObservableObject
     [ObservableProperty]
     public partial FieldTypeChoice? EditFieldType { get; set; }
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsOptionSelected))]
-    public partial FieldOption? SelectedOption { get; set; }
-
-    [ObservableProperty]
-    public partial string NewOptionValue { get; set; } = "";
-
-    [ObservableProperty]
-    public partial string EditOptionValue { get; set; } = "";
-
     public bool IsFieldSelected => SelectedField is not null;
 
-    public bool IsSelectField => SelectedField?.Type == FieldType.Select;
-
     public bool CanChangeFieldType => SelectedField is { UsageCount: 0 };
-
-    public bool IsOptionSelected => SelectedOption is not null;
 
     partial void OnSelectedFieldChanged(FieldDefinition? value)
     {
         EditFieldName = value?.Name ?? "";
-        EditFieldType = value is null ? null : FieldTypeChoices.First(c => c.Type == value.Type);
-        SelectedOption = null;
+        EditFieldType = value is null ? null : FieldTypeChoices.FirstOrDefault(c => c.Type == value.Type);
     }
-
-    partial void OnSelectedOptionChanged(FieldOption? value) => EditOptionValue = value?.Value ?? "";
 
     [RelayCommand]
     private async Task AddFieldAsync()
@@ -102,16 +483,8 @@ public partial class ManageViewModel : ObservableObject
     [RelayCommand]
     private async Task ChangeFieldTypeAsync()
     {
-        if (SelectedField is not { } field || EditFieldType is null || EditFieldType.Type == field.Type)
-        {
-            return;
-        }
-        if (field.Options.Count > 0 && !await _dialogs.ConfirmAsync(
-                "型の変更", $"「{field.Name}」の選択肢 {field.Options.Count} 件は削除されます。型を変更しますか?", "変更する"))
-        {
-            return;
-        }
-        if (await RunAsync(c => c.ChangeFieldType(field.Id, EditFieldType.Type)))
+        if (SelectedField is { } field && EditFieldType is { } type && type.Type != field.Type
+            && await RunAsync(c => c.ChangeFieldType(field.Id, type.Type)))
         {
             ReloadFields(field.Id);
         }
@@ -124,8 +497,8 @@ public partial class ManageViewModel : ObservableObject
         {
             return;
         }
-        var impact = field.UsageCount > 0 ? $"\n値が入っている文書 {field.UsageCount} 件から、この項目の値も削除されます。" : "";
-        if (await _dialogs.ConfirmAsync("項目の削除", $"項目「{field.Name}」を削除しますか?{impact}", "削除する")
+        var impact = field.UsageCount > 0 ? $"\n値が入っている文書 {field.UsageCount} 件から、この補助項目の値も削除されます。" : "";
+        if (await _dialogs.ConfirmAsync("補助項目の削除", $"補助項目「{field.Name}」を削除しますか?{impact}", "削除する")
             && await RunAsync(c => c.DeleteField(field.Id)))
         {
             ReloadFields();
@@ -146,187 +519,7 @@ public partial class ManageViewModel : ObservableObject
         }
     }
 
-    // ---- 選択肢 ----
-
-    [RelayCommand]
-    private async Task AddOptionAsync()
-    {
-        if (SelectedField is not { } field)
-        {
-            return;
-        }
-        long id = 0;
-        if (await RunAsync(c => id = c.AddOption(field.Id, NewOptionValue)))
-        {
-            NewOptionValue = "";
-            ReloadFields(field.Id, id);
-        }
-    }
-
-    [RelayCommand]
-    private async Task RenameOptionAsync()
-    {
-        if (SelectedField is not { } field || SelectedOption is not { } option)
-        {
-            return;
-        }
-        var impact = option.UsageCount > 0 ? $"\nこの選択肢が入っている文書 {option.UsageCount} 件の値も変わります。" : "";
-        if ((option.UsageCount == 0 || await _dialogs.ConfirmAsync("選択肢の名前変更", $"「{option.Value}」を「{NameNormalizer.Clean(EditOptionValue)}」に変更しますか?{impact}", "変更する"))
-            && await RunAsync(c => c.RenameOption(option.Id, EditOptionValue)))
-        {
-            ReloadFields(field.Id, option.Id);
-        }
-    }
-
-    [RelayCommand]
-    private async Task DeleteOptionAsync()
-    {
-        if (SelectedField is not { } field || SelectedOption is not { } option)
-        {
-            return;
-        }
-        var impact = option.UsageCount > 0 ? $"\nこの選択肢が入っている文書 {option.UsageCount} 件から、値が削除されます。" : "";
-        if (await _dialogs.ConfirmAsync("選択肢の削除", $"選択肢「{option.Value}」を削除しますか?{impact}", "削除する")
-            && await RunAsync(c => c.DeleteOption(option.Id)))
-        {
-            ReloadFields(field.Id);
-        }
-    }
-
-    [RelayCommand]
-    private Task MoveOptionUpAsync() => MoveOptionAsync(-1);
-
-    [RelayCommand]
-    private Task MoveOptionDownAsync() => MoveOptionAsync(1);
-
-    private async Task MoveOptionAsync(int offset)
-    {
-        if (SelectedField is { } field && SelectedOption is { } option && await RunAsync(c => c.MoveOption(option.Id, offset)))
-        {
-            ReloadFields(field.Id, option.Id);
-        }
-    }
-
-    // ---- 自由タグ ----
-
-    [ObservableProperty]
-    public partial IReadOnlyList<TagSummary> VisibleTags { get; set; } = [];
-
-    [ObservableProperty]
-    public partial string TagFilter { get; set; } = "";
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsTagSelected))]
-    public partial TagSummary? SelectedTag { get; set; }
-
-    [ObservableProperty]
-    public partial string NewTagName { get; set; } = "";
-
-    [ObservableProperty]
-    public partial string EditTagName { get; set; } = "";
-
-    [ObservableProperty]
-    public partial IReadOnlyList<TagSummary> MergeTargets { get; set; } = [];
-
-    [ObservableProperty]
-    public partial TagSummary? MergeTarget { get; set; }
-
-    [ObservableProperty]
-    public partial int TagCount { get; set; }
-
-    [ObservableProperty]
-    public partial IReadOnlyList<AttributeGroup> AttributeGroups { get; set; } = [];
-
-    public bool IsTagSelected => SelectedTag is not null;
-
-    partial void OnTagFilterChanged(string value) => ApplyTagFilter(SelectedTag?.Id);
-
-    partial void OnSelectedTagChanged(TagSummary? value)
-    {
-        EditTagName = value?.Name ?? "";
-        MergeTargets = value is null ? [] : _allTags.Where(t => t.Id != value.Id).ToList();
-        MergeTarget = null;
-        AttributeGroups = value is null
-            ? []
-            : Fields
-                .Where(f => f.Type == FieldType.Select)
-                .Select(f => new AttributeGroup(f.Name, f.Options
-                    .Select(o => new AttributeChoice(o.Id, o.Value, value.Attributes.Any(a => a.OptionId == o.Id), OnAttributeToggled))
-                    .ToList()))
-                .ToList();
-    }
-
-    private async void OnAttributeToggled()
-    {
-        if (SelectedTag is not { } tag)
-        {
-            return;
-        }
-        var optionIds = AttributeGroups.SelectMany(g => g.Choices).Where(c => c.IsChecked).Select(c => c.OptionId).ToList();
-        if (await RunAsync(c => c.SetTagAttributes(tag.Id, optionIds)))
-        {
-            ReloadTags(tag.Id);
-        }
-    }
-
-    [RelayCommand]
-    private async Task AddTagAsync()
-    {
-        long id = 0;
-        if (await RunAsync(c => id = c.AddTag(NewTagName)))
-        {
-            NewTagName = "";
-            TagFilter = "";
-            ReloadTags(id);
-        }
-    }
-
-    [RelayCommand]
-    private async Task RenameTagAsync()
-    {
-        if (SelectedTag is { } tag && await RunAsync(c => c.RenameTag(tag.Id, EditTagName)))
-        {
-            ReloadTags(tag.Id);
-        }
-    }
-
-    [RelayCommand]
-    private async Task MergeTagAsync()
-    {
-        if (SelectedTag is not { } source)
-        {
-            return;
-        }
-        if (MergeTarget is not { } target)
-        {
-            await _dialogs.ShowErrorAsync("統合先のタグを選んでください。");
-            return;
-        }
-        if (await _dialogs.ConfirmAsync("タグの統合",
-                $"「{source.Name}」を「{target.Name}」に統合しますか?\n「{source.Name}」が付いた文書 {source.UsageCount} 件には「{target.Name}」が付き、「{source.Name}」は削除されます。",
-                "統合する")
-            && await RunAsync(c => c.MergeTags(source.Id, target.Id)))
-        {
-            ReloadTags(target.Id);
-        }
-    }
-
-    [RelayCommand]
-    private async Task DeleteTagAsync()
-    {
-        if (SelectedTag is not { } tag)
-        {
-            return;
-        }
-        var impact = tag.UsageCount > 0 ? $"\nこのタグが付いた文書 {tag.UsageCount} 件から、タグが外れます(文書は削除されません)。" : "";
-        if (await _dialogs.ConfirmAsync("タグの削除", $"タグ「{tag.Name}」を削除しますか?{impact}", "削除する")
-            && await RunAsync(c => c.DeleteTag(tag.Id)))
-        {
-            ReloadTags();
-        }
-    }
-
-    // ---- 共通 ----
+    // ==== 共通 ====
 
     private async Task<bool> RunAsync(Action<CatalogRepository> action)
     {
@@ -343,34 +536,54 @@ public partial class ManageViewModel : ObservableObject
         }
     }
 
-    private void ReloadFields(long? selectFieldId = null, long? selectOptionId = null)
+    private void ReloadFields(long? selectFieldId = null)
     {
         using (var connection = PdfManagerDatabase.Open(_dataFolder.DatabasePath))
         {
-            Fields = new CatalogRepository(connection).GetFields();
+            Fields = new CatalogRepository(connection).GetFields().Where(f => f.Type != FieldType.Select).ToList();
         }
         SelectedField = Fields.FirstOrDefault(f => f.Id == selectFieldId);
-        SelectedOption = SelectedField?.Options.FirstOrDefault(o => o.Id == selectOptionId);
-        // 選択肢の追加・削除はタグの属性の選択肢や表示にも影響するため、タグも読み直す
-        ReloadTags(SelectedTag?.Id);
     }
 
-    private void ReloadTags(long? selectTagId = null)
+    // タググループ・項目・タグはお互いに関わるため、まとめて読み直す
+    private void ReloadAll(long? selectItemId = null, long? selectGroupId = null, long? selectTagId = null, bool keepParentFilter = false)
     {
+        var parentFilter = ParentFilter;
+        selectItemId ??= SelectedItem?.Id;
+        selectGroupId ??= SelectedGroup?.Id;
+        selectTagId ??= SelectedTag?.Id;
         using (var connection = PdfManagerDatabase.Open(_dataFolder.DatabasePath))
         {
-            _allTags = new CatalogRepository(connection).GetTags();
+            var catalog = new CatalogRepository(connection);
+            Groups = catalog.GetGroups();
+            _allTags = catalog.GetTags();
         }
+        Items = Groups.Where(g => g.IsPinned).OrderBy(g => g.PinOrder).ThenBy(g => g.Id).ToList();
+        ItemCandidates = Groups.Where(g => !g.IsPinned).ToList();
+        NewItemGroup = ItemCandidates.FirstOrDefault();
+        SelectedItem = Items.FirstOrDefault(g => g.Id == selectItemId);
+
+        GroupChoices = [FreeTags, .. Groups.Select(g => new GroupChoice(g.Id, $"{g.Name}({g.RankLabel})"))];
+        TagGroupFilters = [AllGroups, .. GroupChoices];
+        TagGroupFilter = TagGroupFilters.FirstOrDefault(c => c.Id == TagGroupFilter?.Id) ?? AllGroups;
+        NewTagGroup = GroupChoices.FirstOrDefault(c => c.Id == NewTagGroup?.Id) ?? FreeTags;
+        SelectedGroup = Groups.FirstOrDefault(g => g.Id == selectGroupId);
+
         TagCount = _allTags.Count;
         ApplyTagFilter(selectTagId);
+        if (keepParentFilter)
+        {
+            ParentFilter = parentFilter;
+        }
     }
 
     private void ApplyTagFilter(long? selectTagId)
     {
         var filter = NameNormalizer.Normalize(TagFilter);
-        VisibleTags = filter.Length == 0
-            ? _allTags
-            : _allTags.Where(t => NameNormalizer.Normalize(t.Name).Contains(filter, StringComparison.Ordinal)).ToList();
+        VisibleTags = _allTags
+            .Where(t => TagGroupFilter is null || TagGroupFilter == AllGroups || t.GroupId == TagGroupFilter.Id)
+            .Where(t => filter.Length == 0 || NameNormalizer.Normalize(t.Name).Contains(filter, StringComparison.Ordinal))
+            .ToList();
         SelectedTag = VisibleTags.FirstOrDefault(t => t.Id == selectTagId);
     }
 }

@@ -9,7 +9,7 @@
                  mc:Ignorable="d"
                  d:DataContext="{d:DesignInstance vm:ManageViewModel}"
                  Title="項目・タグ管理"
-                 Width="980" Height="680" MinWidth="820" MinHeight="520"
+                 Width="1040" Height="720" MinWidth="820" MinHeight="520"
                  WindowStartupLocation="CenterOwner"
                  ShowInTaskbar="False"
                  ExtendsContentIntoTitleBar="True"
@@ -34,6 +34,16 @@
             <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
+        <!-- タググループ 1 行(名前、順位、タグの件数) -->
+        <DataTemplate x:Key="GroupItem">
+            <DockPanel Margin="0,2">
+                <ui:TextBlock DockPanel.Dock="Right" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="12,0,0,0">
+                    <Run Text="{Binding RankLabel, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding TagCount, Mode=OneWay, StringFormat={}タグ {0:N0} 件}" />
+                </ui:TextBlock>
+                <ui:TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </DataTemplate>
+        <!-- タグ 1 行(名前、件数、グループ・紐づけ先) -->
         <DataTemplate x:Key="TagItem">
             <StackPanel Margin="0,2">
                 <DockPanel>
@@ -41,18 +51,8 @@
                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="12,0,0,0" />
                     <ui:TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
                 </DockPanel>
-                <ui:TextBlock Text="{Binding AttributeText}" FontSize="12" TextTrimming="CharacterEllipsis"
-                              Foreground="{DynamicResource TextFillColorSecondaryBrush}">
-                    <ui:TextBlock.Style>
-                        <Style TargetType="ui:TextBlock">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding AttributeText}" Value="">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </ui:TextBlock.Style>
-                </ui:TextBlock>
+                <ui:TextBlock Text="{Binding DetailText}" FontSize="12" TextTrimming="CharacterEllipsis"
+                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
             </StackPanel>
         </DataTemplate>
     </ui:FluentWindow.Resources>
@@ -67,40 +67,226 @@
 
         <TabControl Grid.Row="1" Margin="16,0,16,16">
 
-            <!-- ===== 項目 ===== -->
+            <!-- ===== 項目(左に常に表示するタググループ、決定ログ Q-14) ===== -->
             <TabItem Header="項目">
                 <Grid Margin="0,12,0,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="340" />
+                        <ColumnDefinition Width="380" />
                         <ColumnDefinition Width="12" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-
                     <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
                         <DockPanel>
-                            <ui:TextBlock DockPanel.Dock="Top" Text="項目の一覧" Style="{StaticResource SectionTitle}" />
-
+                            <ui:TextBlock DockPanel.Dock="Top" Text="項目の一覧(メイン画面の左に、この順に常に表示します)" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" />
                             <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <ui:Button Content="上へ" Icon="{ui:SymbolIcon ArrowUp24}" Command="{Binding MoveFieldUpCommand}"
-                                               IsEnabled="{Binding IsFieldSelected}" Margin="0,0,8,0" />
-                                    <ui:Button Content="下へ" Icon="{ui:SymbolIcon ArrowDown24}" Command="{Binding MoveFieldDownCommand}"
-                                               IsEnabled="{Binding IsFieldSelected}" Margin="0,0,8,0" />
-                                    <ui:Button Content="削除" Icon="{ui:SymbolIcon Delete24}" Command="{Binding DeleteFieldCommand}"
-                                               IsEnabled="{Binding IsFieldSelected}" />
+                                    <ui:Button Content="上へ" Icon="{ui:SymbolIcon ArrowUp24}" Command="{Binding MoveItemUpCommand}" IsEnabled="{Binding IsItemSelected}" Margin="0,0,8,0" />
+                                    <ui:Button Content="下へ" Icon="{ui:SymbolIcon ArrowDown24}" Command="{Binding MoveItemDownCommand}" IsEnabled="{Binding IsItemSelected}" Margin="0,0,8,0" />
+                                    <ui:Button Content="項目から外す" Icon="{ui:SymbolIcon Dismiss24}" Command="{Binding RemoveItemCommand}" IsEnabled="{Binding IsItemSelected}"
+                                               ToolTip="タググループとタグはそのまま残ります" />
                                 </StackPanel>
                                 <ui:TextBlock Text="項目を追加" Style="{StaticResource SectionTitle}" />
-                                <ui:TextBox AutomationProperties.Name="新しい項目名" PlaceholderText="項目名(例:店舗、年月、メーカー)" Margin="0,0,0,8"
+                                <DockPanel>
+                                    <ui:Button DockPanel.Dock="Right" Content="追加" Appearance="Primary" Icon="{ui:SymbolIcon Add24}"
+                                               Command="{Binding AddItemCommand}" AutomationProperties.Name="項目を追加" Margin="8,0,0,0" />
+                                    <ComboBox ItemsSource="{Binding ItemCandidates}" DisplayMemberPath="Name" SelectedItem="{Binding NewItemGroup}"
+                                              AutomationProperties.Name="項目にするタググループ" />
+                                </DockPanel>
+                            </StackPanel>
+                            <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}" ItemTemplate="{StaticResource GroupItem}"
+                                     AutomationProperties.Name="項目の一覧" />
+                        </DockPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
+                        <StackPanel>
+                            <ui:TextBlock Text="項目とは" Style="{StaticResource SectionTitle}" />
+                            <ui:TextBlock Style="{StaticResource Hint}" Margin="0,0,0,12"
+                                          Text="項目にしたタググループは、メイン画面の左の絞り込みに常に表示され、そのタグで絞り込めます。ほかのタググループやタグは、左の検索欄から探します。" />
+                            <ui:TextBlock Style="{StaticResource Hint}"
+                                          Text="どのタググループ(順位 1〜5・独立)でも項目にできます。タググループは「タググループ」タブで作ります。年月・日付などの値は「補助項目」タブで作ります。" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ===== タググループ(決定ログ Q-1・Q-2・Q-13) ===== -->
+            <TabItem Header="タググループ">
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="380" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
+                        <DockPanel>
+                            <ui:TextBlock DockPanel.Dock="Top" Text="タググループの一覧" Style="{StaticResource SectionTitle}" />
+                            <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <ui:Button Content="上へ" Icon="{ui:SymbolIcon ArrowUp24}" Command="{Binding MoveGroupUpCommand}" IsEnabled="{Binding IsGroupSelected}" Margin="0,0,8,0" />
+                                    <ui:Button Content="下へ" Icon="{ui:SymbolIcon ArrowDown24}" Command="{Binding MoveGroupDownCommand}" IsEnabled="{Binding IsGroupSelected}" Margin="0,0,8,0" />
+                                    <ui:Button Content="削除" Icon="{ui:SymbolIcon Delete24}" Command="{Binding DeleteGroupCommand}" IsEnabled="{Binding IsGroupSelected}" />
+                                </StackPanel>
+                                <ui:TextBlock Text="タググループを追加" Style="{StaticResource SectionTitle}" />
+                                <ui:TextBox AutomationProperties.Name="新しいタググループ名" PlaceholderText="名前(例:分類１、作者)" Margin="0,0,0,8"
+                                            Text="{Binding NewGroupName, UpdateSourceTrigger=PropertyChanged}" />
+                                <DockPanel>
+                                    <ui:Button DockPanel.Dock="Right" Content="追加" Appearance="Primary" Icon="{ui:SymbolIcon Add24}"
+                                               Command="{Binding AddGroupCommand}" AutomationProperties.Name="タググループを追加" Margin="8,0,0,0" />
+                                    <ComboBox ItemsSource="{Binding RankChoices}" DisplayMemberPath="Label" SelectedItem="{Binding NewGroupRank}"
+                                              AutomationProperties.Name="新しいタググループの順位" />
+                                </DockPanel>
+                            </StackPanel>
+                            <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}" ItemTemplate="{StaticResource GroupItem}"
+                                     AutomationProperties.Name="タググループの一覧" />
+                        </DockPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
+                        <Grid>
+                            <StackPanel Visibility="{Binding IsGroupSelected, Converter={StaticResource InverseBoolToVisibility}}">
+                                <ui:TextBlock Text="順位について" Style="{StaticResource SectionTitle}" />
+                                <ui:TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
+                                              Text="順位 2〜5 のタグは、1 つ上の順位のタグに紐づけます(例:分類２「ドラゴンボール」→ 分類１「漫画」)。PDF にタグを付ける画面では、上の順位で選んだタグに紐づくタグが下の欄に表示されます。" />
+                                <ui:TextBlock Style="{StaticResource Hint}"
+                                              Text="「独立」は紐づけのないグループで、順位 1 と同じ位置に表示されます(例:作者)。グループに入れないタグは「自由タグ」です。" />
+                            </StackPanel>
+                            <StackPanel Visibility="{Binding IsGroupSelected, Converter={StaticResource BoolToVisibility}}">
+                                <ui:TextBlock Text="名前" Style="{StaticResource SectionTitle}" />
+                                <DockPanel Margin="0,0,0,16">
+                                    <ui:Button DockPanel.Dock="Right" Content="名前を変更" Command="{Binding RenameGroupCommand}" AutomationProperties.Name="タググループ名を変更" Margin="8,0,0,0" />
+                                    <ui:TextBox AutomationProperties.Name="タググループ名" Text="{Binding EditGroupName, UpdateSourceTrigger=PropertyChanged}" />
+                                </DockPanel>
+                                <ui:TextBlock Text="順位" Style="{StaticResource SectionTitle}" />
+                                <DockPanel Margin="0,0,0,4">
+                                    <ui:Button DockPanel.Dock="Right" Content="順位を変更" Command="{Binding ChangeGroupRankCommand}" Margin="8,0,0,0" />
+                                    <ComboBox ItemsSource="{Binding RankChoices}" DisplayMemberPath="Label" SelectedItem="{Binding EditGroupRank}"
+                                              AutomationProperties.Name="タググループの順位" />
+                                </DockPanel>
+                                <ui:TextBlock Text="順位を変えると、合わなくなった紐づけは外れます(事前に件数を確認します)。" Style="{StaticResource Hint}" Margin="0,0,0,16" />
+                                <ui:TextBlock Text="このグループのタグ" Style="{StaticResource SectionTitle}" />
+                                <ui:TextBlock Text="{Binding GroupTagsText}" TextWrapping="Wrap" />
+                                <ui:TextBlock Text="タグの追加・紐づけは「タグ」タブで行います。" Style="{StaticResource Hint}" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ===== タグ ===== -->
+            <TabItem Header="タグ">
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="380" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
+                        <DockPanel>
+                            <ui:TextBlock DockPanel.Dock="Top" Style="{StaticResource SectionTitle}" Text="{Binding TagCount, StringFormat=タグの一覧({0:N0} 件)}" />
+                            <ComboBox DockPanel.Dock="Top" ItemsSource="{Binding TagGroupFilters}" DisplayMemberPath="Label" SelectedItem="{Binding TagGroupFilter}"
+                                      AutomationProperties.Name="タグの一覧のグループ" Margin="0,0,0,8" />
+                            <ui:TextBox DockPanel.Dock="Top" AutomationProperties.Name="タグの絞り込み" PlaceholderText="絞り込み" Icon="{ui:SymbolIcon Filter24}" Margin="0,0,0,8"
+                                        Text="{Binding TagFilter, UpdateSourceTrigger=PropertyChanged}" />
+                            <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                                <ui:TextBlock Text="タグを追加" Style="{StaticResource SectionTitle}" />
+                                <ui:TextBox AutomationProperties.Name="新しいタグ名" PlaceholderText="タグ名" Margin="0,0,0,8"
+                                            Text="{Binding NewTagName, UpdateSourceTrigger=PropertyChanged}" />
+                                <DockPanel>
+                                    <ui:Button DockPanel.Dock="Right" Content="追加" Appearance="Primary" Icon="{ui:SymbolIcon Add24}"
+                                               Command="{Binding AddTagCommand}" AutomationProperties.Name="タグを追加" Margin="8,0,0,0" />
+                                    <ComboBox ItemsSource="{Binding GroupChoices}" DisplayMemberPath="Label" SelectedItem="{Binding NewTagGroup}"
+                                              AutomationProperties.Name="新しいタグのグループ" />
+                                </DockPanel>
+                            </StackPanel>
+                            <ListBox ItemsSource="{Binding VisibleTags}" SelectedItem="{Binding SelectedTag}" ItemTemplate="{StaticResource TagItem}"
+                                     AutomationProperties.Name="タグの一覧" />
+                        </DockPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
+                        <Grid>
+                            <ui:TextBlock Text="左の一覧からタグを選ぶと、名前・グループ・紐づけの変更、統合、削除ができます" Style="{StaticResource Hint}"
+                                          Visibility="{Binding IsTagSelected, Converter={StaticResource InverseBoolToVisibility}}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
+                            <ScrollViewer Visibility="{Binding IsTagSelected, Converter={StaticResource BoolToVisibility}}" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Margin="0,0,12,0">
+                                    <ui:TextBlock Text="名前" Style="{StaticResource SectionTitle}" />
+                                    <DockPanel Margin="0,0,0,4">
+                                        <ui:Button DockPanel.Dock="Right" Content="名前を変更" Command="{Binding RenameTagCommand}" AutomationProperties.Name="タグ名を変更" Margin="8,0,0,0" />
+                                        <ui:TextBox AutomationProperties.Name="タグ名" Text="{Binding EditTagName, UpdateSourceTrigger=PropertyChanged}" />
+                                    </DockPanel>
+                                    <ui:TextBlock Text="全角・半角、大文字・小文字の違いは同じタグとして扱います。グループが違っても同じ名前のタグは作れません。" Style="{StaticResource Hint}" Margin="0,0,0,20" />
+
+                                    <ui:TextBlock Text="タググループ" Style="{StaticResource SectionTitle}" />
+                                    <DockPanel Margin="0,0,0,20">
+                                        <ui:Button DockPanel.Dock="Right" Content="グループを変更" Command="{Binding ChangeTagGroupCommand}" Margin="8,0,0,0" />
+                                        <ComboBox ItemsSource="{Binding GroupChoices}" DisplayMemberPath="Label" SelectedItem="{Binding EditTagGroup}"
+                                                  AutomationProperties.Name="タグのグループ" />
+                                    </DockPanel>
+
+                                    <ui:TextBlock Text="紐づけ(1 つ上の順位のタグ)" Style="{StaticResource SectionTitle}" />
+                                    <ui:TextBlock Text="{Binding ParentHint}" Style="{StaticResource Hint}" Margin="0,0,0,8" />
+                                    <ui:TextBox AutomationProperties.Name="紐づけ先の絞り込み" PlaceholderText="紐づけ先の絞り込み" Icon="{ui:SymbolIcon Filter24}" Margin="0,0,0,8"
+                                                Text="{Binding ParentFilter, UpdateSourceTrigger=PropertyChanged}"
+                                                Visibility="{Binding CanHaveParents, Converter={StaticResource BoolToVisibility}}" />
+                                    <ItemsControl ItemsSource="{Binding ParentChoices}" Margin="0,0,0,20" AutomationProperties.Name="紐づけ先">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,16,4" AutomationProperties.Name="{Binding Name}" ToolTip="{Binding GroupName}">
+                                                    <ui:TextBlock Text="{Binding Name}" />
+                                                </CheckBox>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <ui:TextBlock Text="別のタグに統合" Style="{StaticResource SectionTitle}" />
+                                    <DockPanel Margin="0,0,0,4">
+                                        <ui:Button DockPanel.Dock="Right" Content="統合" Command="{Binding MergeTagCommand}" Margin="8,0,0,0" />
+                                        <ComboBox ItemsSource="{Binding MergeTargets}" SelectedItem="{Binding MergeTarget}" AutomationProperties.Name="統合先" DisplayMemberPath="Name" />
+                                    </DockPanel>
+                                    <ui:TextBlock Text="表記ゆれ(例:「そば屋」と「蕎麦屋」)を 1 つにまとめます。このタグが付いた文書には統合先のタグが付きます。"
+                                                  Style="{StaticResource Hint}" Margin="0,0,0,20" />
+
+                                    <ui:TextBlock Text="削除" Style="{StaticResource SectionTitle}" />
+                                    <ui:Button Content="このタグを削除" Icon="{ui:SymbolIcon Delete24}" Command="{Binding DeleteTagCommand}" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ===== 補助項目(年月・日付・数値・文字、決定ログ Q-6) ===== -->
+            <TabItem Header="補助項目">
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="380" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
+                        <DockPanel>
+                            <ui:TextBlock DockPanel.Dock="Top" Text="補助項目の一覧" Style="{StaticResource SectionTitle}" />
+                            <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <ui:Button Content="上へ" Icon="{ui:SymbolIcon ArrowUp24}" Command="{Binding MoveFieldUpCommand}" IsEnabled="{Binding IsFieldSelected}" Margin="0,0,8,0" />
+                                    <ui:Button Content="下へ" Icon="{ui:SymbolIcon ArrowDown24}" Command="{Binding MoveFieldDownCommand}" IsEnabled="{Binding IsFieldSelected}" Margin="0,0,8,0" />
+                                    <ui:Button Content="削除" Icon="{ui:SymbolIcon Delete24}" Command="{Binding DeleteFieldCommand}" IsEnabled="{Binding IsFieldSelected}" />
+                                </StackPanel>
+                                <ui:TextBlock Text="補助項目を追加" Style="{StaticResource SectionTitle}" />
+                                <ui:TextBox AutomationProperties.Name="新しい補助項目名" PlaceholderText="名前(例:年月、発行日、金額)" Margin="0,0,0,8"
                                             Text="{Binding NewFieldName, UpdateSourceTrigger=PropertyChanged}" />
                                 <DockPanel>
                                     <ui:Button DockPanel.Dock="Right" Content="追加" Appearance="Primary" Icon="{ui:SymbolIcon Add24}"
-                                               Command="{Binding AddFieldCommand}" AutomationProperties.Name="項目を追加" Margin="8,0,0,0" />
-                                    <ComboBox ItemsSource="{Binding FieldTypeChoices}" DisplayMemberPath="Label"
-                                              SelectedItem="{Binding NewFieldType}" AutomationProperties.Name="新しい項目の型" />
+                                               Command="{Binding AddFieldCommand}" AutomationProperties.Name="補助項目を追加" Margin="8,0,0,0" />
+                                    <ComboBox ItemsSource="{Binding FieldTypeChoices}" DisplayMemberPath="Label" SelectedItem="{Binding NewFieldType}"
+                                              AutomationProperties.Name="新しい補助項目の型" />
                                 </DockPanel>
                             </StackPanel>
-
-                            <ListBox ItemsSource="{Binding Fields}" SelectedItem="{Binding SelectedField}">
+                            <ListBox ItemsSource="{Binding Fields}" SelectedItem="{Binding SelectedField}" AutomationProperties.Name="補助項目の一覧">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <DockPanel Margin="0,2">
@@ -114,153 +300,24 @@
                             </ListBox>
                         </DockPanel>
                     </Border>
-
                     <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
                         <Grid>
-                            <ui:TextBlock Text="左の一覧から項目を選ぶと、ここで編集できます" Style="{StaticResource Hint}" Visibility="{Binding IsFieldSelected, Converter={StaticResource InverseBoolToVisibility}}"
+                            <ui:TextBlock Text="補助項目は、年月・日付・数値・文字の値を PDF ごとに入れる欄です(例:年月 2026-10)。メイン画面の左の「補助項目」で範囲などを指定して絞り込めます。左の一覧から選ぶと編集できます。"
+                                          Style="{StaticResource Hint}" Visibility="{Binding IsFieldSelected, Converter={StaticResource InverseBoolToVisibility}}"
                                           HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
-
-                            <DockPanel Visibility="{Binding IsFieldSelected, Converter={StaticResource BoolToVisibility}}">
-                                <StackPanel DockPanel.Dock="Top">
-                                    <ui:TextBlock Text="名前" Style="{StaticResource SectionTitle}" />
-                                    <DockPanel Margin="0,0,0,16">
-                                        <ui:Button DockPanel.Dock="Right" Content="名前を変更" Command="{Binding RenameFieldCommand}" AutomationProperties.Name="項目名を変更" Margin="8,0,0,0" />
-                                        <ui:TextBox AutomationProperties.Name="項目名" Text="{Binding EditFieldName, UpdateSourceTrigger=PropertyChanged}" />
-                                    </DockPanel>
-
-                                    <ui:TextBlock Text="型" Style="{StaticResource SectionTitle}" />
-                                    <DockPanel Margin="0,0,0,4">
-                                        <ui:Button DockPanel.Dock="Right" Content="型を変更" Command="{Binding ChangeFieldTypeCommand}"
-                                                   IsEnabled="{Binding CanChangeFieldType}" Margin="8,0,0,0" />
-                                        <ComboBox ItemsSource="{Binding FieldTypeChoices}" DisplayMemberPath="Label"
-                                                  SelectedItem="{Binding EditFieldType}" IsEnabled="{Binding CanChangeFieldType}" />
-                                    </DockPanel>
-                                    <ui:TextBlock Text="値が入っている文書がある項目は、型を変更できません。" Style="{StaticResource Hint}" Margin="0,0,0,16" />
-                                </StackPanel>
-
-                                <DockPanel Visibility="{Binding IsSelectField, Converter={StaticResource BoolToVisibility}}">
-                                    <ui:TextBlock DockPanel.Dock="Top" Text="選択肢" Style="{StaticResource SectionTitle}" />
-                                    <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-                                        <DockPanel Margin="0,0,0,8" IsEnabled="{Binding IsOptionSelected}">
-                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
-                                                <ui:Button Content="名前を変更" Command="{Binding RenameOptionCommand}" AutomationProperties.Name="選択肢名を変更" Margin="0,0,8,0" />
-                                                <ui:Button Icon="{ui:SymbolIcon ArrowUp24}" Command="{Binding MoveOptionUpCommand}" ToolTip="上へ" Margin="0,0,8,0" />
-                                                <ui:Button Icon="{ui:SymbolIcon ArrowDown24}" Command="{Binding MoveOptionDownCommand}" ToolTip="下へ" Margin="0,0,8,0" />
-                                                <ui:Button Icon="{ui:SymbolIcon Delete24}" Command="{Binding DeleteOptionCommand}" ToolTip="削除" />
-                                            </StackPanel>
-                                            <ui:TextBox AutomationProperties.Name="選択中の選択肢" PlaceholderText="選択中の選択肢" Text="{Binding EditOptionValue, UpdateSourceTrigger=PropertyChanged}" />
-                                        </DockPanel>
-                                        <DockPanel>
-                                            <ui:Button DockPanel.Dock="Right" Content="追加" Icon="{ui:SymbolIcon Add24}"
-                                                       Command="{Binding AddOptionCommand}" AutomationProperties.Name="選択肢を追加" Margin="8,0,0,0" />
-                                            <ui:TextBox AutomationProperties.Name="新しい選択肢" PlaceholderText="新しい選択肢" Text="{Binding NewOptionValue, UpdateSourceTrigger=PropertyChanged}" />
-                                        </DockPanel>
-                                    </StackPanel>
-                                    <ListBox ItemsSource="{Binding SelectedField.Options}" SelectedItem="{Binding SelectedOption}">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate>
-                                                <DockPanel Margin="0,2">
-                                                    <ui:TextBlock DockPanel.Dock="Right" Text="{Binding UsageCount, StringFormat={}{0:N0} 件}"
-                                                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="12,0,0,0" />
-                                                    <ui:TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis" />
-                                                </DockPanel>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
-                                </DockPanel>
-                            </DockPanel>
-                        </Grid>
-                    </Border>
-                </Grid>
-            </TabItem>
-
-            <!-- ===== 自由タグ ===== -->
-            <TabItem Header="自由タグ">
-                <Grid Margin="0,12,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="340" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
-                        <DockPanel>
-                            <ui:TextBlock DockPanel.Dock="Top" Style="{StaticResource SectionTitle}"
-                                          Text="{Binding TagCount, StringFormat=タグの一覧({0:N0} 件)}" />
-                            <ui:TextBox DockPanel.Dock="Top" AutomationProperties.Name="タグの絞り込み" PlaceholderText="絞り込み" Icon="{ui:SymbolIcon Filter24}" Margin="0,0,0,8"
-                                        Text="{Binding TagFilter, UpdateSourceTrigger=PropertyChanged}" />
-
-                            <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-                                <ui:TextBlock Text="タグを追加" Style="{StaticResource SectionTitle}" />
-                                <DockPanel>
-                                    <ui:Button DockPanel.Dock="Right" Content="追加" Appearance="Primary" Icon="{ui:SymbolIcon Add24}"
-                                               Command="{Binding AddTagCommand}" AutomationProperties.Name="タグを追加" Margin="8,0,0,0" />
-                                    <ui:TextBox AutomationProperties.Name="新しいタグ名" PlaceholderText="タグ名" Text="{Binding NewTagName, UpdateSourceTrigger=PropertyChanged}" />
-                                </DockPanel>
-                                <ui:TextBlock Text="タグは取り込み時に入力しても自動で追加されます。" Style="{StaticResource Hint}" Margin="0,8,0,0" />
-                            </StackPanel>
-
-                            <ListBox ItemsSource="{Binding VisibleTags}" SelectedItem="{Binding SelectedTag}"
-                                     ItemTemplate="{StaticResource TagItem}" />
-                        </DockPanel>
-                    </Border>
-
-                    <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
-                        <Grid>
-                            <ui:TextBlock Text="左の一覧からタグを選ぶと、名前の変更・属性の設定・統合・削除ができます" Style="{StaticResource Hint}" Visibility="{Binding IsTagSelected, Converter={StaticResource InverseBoolToVisibility}}"
-                                          HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
-
-                            <ScrollViewer Visibility="{Binding IsTagSelected, Converter={StaticResource BoolToVisibility}}"
-                                          VerticalScrollBarVisibility="Auto">
-                            <StackPanel>
+                            <StackPanel Visibility="{Binding IsFieldSelected, Converter={StaticResource BoolToVisibility}}">
                                 <ui:TextBlock Text="名前" Style="{StaticResource SectionTitle}" />
-                                <DockPanel Margin="0,0,0,4">
-                                    <ui:Button DockPanel.Dock="Right" Content="名前を変更" Command="{Binding RenameTagCommand}" AutomationProperties.Name="タグ名を変更" Margin="8,0,0,0" />
-                                    <ui:TextBox AutomationProperties.Name="タグ名" Text="{Binding EditTagName, UpdateSourceTrigger=PropertyChanged}" />
+                                <DockPanel Margin="0,0,0,16">
+                                    <ui:Button DockPanel.Dock="Right" Content="名前を変更" Command="{Binding RenameFieldCommand}" AutomationProperties.Name="補助項目名を変更" Margin="8,0,0,0" />
+                                    <ui:TextBox AutomationProperties.Name="補助項目名" Text="{Binding EditFieldName, UpdateSourceTrigger=PropertyChanged}" />
                                 </DockPanel>
-                                <ui:TextBlock Text="全角・半角、大文字・小文字の違いは同じタグとして扱います。" Style="{StaticResource Hint}" Margin="0,0,0,20" />
-
-                                <ui:TextBlock Text="属性" Style="{StaticResource SectionTitle}" />
-                                <ui:TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
-                                              Text="取り込み画面で同じ選択肢を選ぶと、このタグが候補に出ます。チェックはすぐに保存されます。" />
-                                <ui:TextBlock Style="{StaticResource Hint}" Margin="0,0,0,20"
-                                              Visibility="{Binding HasAttributeFields, Converter={StaticResource InverseBoolToVisibility}}"
-                                              Text="属性に使える項目がありません。「項目」タブで、型が「選択肢」の項目(例:エリア)を作ってください。" />
-                                <ItemsControl ItemsSource="{Binding AttributeGroups}" Margin="0,0,0,12">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Margin="0,0,0,8">
-                                                <ui:TextBlock Text="{Binding FieldName}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4" />
-                                                <ItemsControl ItemsSource="{Binding Choices}">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate>
-                                                            <WrapPanel />
-                                                        </ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <CheckBox Content="{Binding Value}" IsChecked="{Binding IsChecked}" Margin="0,0,16,4" />
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <ui:TextBlock Text="別のタグに統合" Style="{StaticResource SectionTitle}" />
+                                <ui:TextBlock Text="型" Style="{StaticResource SectionTitle}" />
                                 <DockPanel Margin="0,0,0,4">
-                                    <ui:Button DockPanel.Dock="Right" Content="統合" Command="{Binding MergeTagCommand}" Margin="8,0,0,0" />
-                                    <ComboBox ItemsSource="{Binding MergeTargets}" SelectedItem="{Binding MergeTarget}" AutomationProperties.Name="統合先" DisplayMemberPath="Name"
-                                              IsEditable="False" />
+                                    <ui:Button DockPanel.Dock="Right" Content="型を変更" Command="{Binding ChangeFieldTypeCommand}" IsEnabled="{Binding CanChangeFieldType}" Margin="8,0,0,0" />
+                                    <ComboBox ItemsSource="{Binding FieldTypeChoices}" DisplayMemberPath="Label" SelectedItem="{Binding EditFieldType}" IsEnabled="{Binding CanChangeFieldType}" />
                                 </DockPanel>
-                                <ui:TextBlock Text="表記ゆれ(例:「そば屋」と「蕎麦屋」)を 1 つにまとめます。このタグが付いた文書には統合先のタグが付きます。"
-                                              Style="{StaticResource Hint}" Margin="0,0,0,20" />
-
-                                <ui:TextBlock Text="削除" Style="{StaticResource SectionTitle}" />
-                                <ui:Button Content="このタグを削除" Icon="{ui:SymbolIcon Delete24}" Command="{Binding DeleteTagCommand}" />
+                                <ui:TextBlock Text="値が入っている文書がある補助項目は、型を変更できません。" Style="{StaticResource Hint}" />
                             </StackPanel>
-                            </ScrollViewer>
                         </Grid>
                     </Border>
                 </Grid>

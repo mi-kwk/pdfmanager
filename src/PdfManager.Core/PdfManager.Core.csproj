@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <!-- 決定ログ R-9: SQLite 本体は Windows に入っている winsqlite3.dll(Microsoft の署名付き)を使う。
+         署名のない e_sqlite3.dll は、ネットワークにつながっていない PC で読み込みを止められるため使わない -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.12" />
+    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" Version="2.1.11" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
   </ItemGroup>
   <ItemGroup>

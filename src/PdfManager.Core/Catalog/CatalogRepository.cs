@@ -124,66 +124,180 @@ public sealed class CatalogRepository(SqliteConnection connection)
         Reorder("field_options", field.Options.Select(o => o.Id).ToList(), optionId, offset);
     }
 
-    // ---- 自由タグ ----
+    // ---- タググループ(決定ログ R-11、Q-1〜Q-14) ----
 
-    public IReadOnlyList<TagSummary> GetTags()
+    public IReadOnlyList<TagGroup> GetGroups() => Query(
+        """
+        SELECT g.id, g.name, g.rank, g.is_pinned, g.pin_order, (SELECT COUNT(*) FROM tags t WHERE t.group_id = g.id)
+        FROM tag_groups g ORDER BY g.sort_order, g.id;
+        """,
+        r => new TagGroup(r.GetInt64(0), r.GetString(1), r.GetInt32(2), r.GetBoolean(3), r.GetInt32(4), r.GetInt64(5)));
+
+    public long AddGroup(string name, int rank)
     {
-        var attributes = Query(
+        var cleaned = ValidateName(name, "タググループ名");
+        ValidateRank(rank);
+        EnsureUnique(cleaned, GetGroups().Select(g => (g.Id, g.Name)), exceptId: null, "同じ名前のタググループがすでにあります。");
+        return InsertReturningId(
             """
-            SELECT a.tag_id, o.id, f.name, o.value
-            FROM tag_attributes a
-            JOIN field_options o ON o.id = a.option_id
-            JOIN fields f ON f.id = o.field_id
-            ORDER BY f.sort_order, f.id, o.sort_order, o.id;
+            INSERT INTO tag_groups (name, normalized_name, rank, sort_order)
+            VALUES ($name, $normalized, $rank, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tag_groups)) RETURNING id;
             """,
-            r => (TagId: r.GetInt64(0), Attribute: new TagAttribute(r.GetInt64(1), r.GetString(2), r.GetString(3))))
-            .ToLookup(x => x.TagId, x => x.Attribute);
-
-        return Query(
-            "SELECT t.id, t.name, (SELECT COUNT(*) FROM document_tags d WHERE d.tag_id = t.id) FROM tags t ORDER BY t.normalized_name;",
-            r => new TagSummary(r.GetInt64(0), r.GetString(1), r.GetInt64(2), attributes[r.GetInt64(0)].ToList()));
+            ("$name", cleaned), ("$normalized", NameNormalizer.Normalize(cleaned)), ("$rank", rank));
     }
 
-    // 指定した選択肢を属性として持つタグだけにする(決定ログ D-1、docs/04「自由タグの属性」)
-    public void SetTagAttributes(long tagId, IEnumerable<long> optionIds)
+    public void RenameGroup(long groupId, string name)
+    {
+        var cleaned = ValidateName(name, "タググループ名");
+        EnsureUnique(cleaned, GetGroups().Select(g => (g.Id, g.Name)), groupId, "同じ名前のタググループがすでにあります。");
+        Execute("UPDATE tag_groups SET name = $name, normalized_name = $normalized WHERE id = $id;",
+            ("$name", cleaned), ("$normalized", NameNormalizer.Normalize(cleaned)), ("$id", groupId));
+    }
+
+    // 順位を変えると、合わなくなった紐づけは外れる(件数は CountLinksBrokenByRank で事前に確かめる)
+    public void ChangeGroupRank(long groupId, int rank)
+    {
+        ValidateRank(rank);
+        using var transaction = connection.BeginTransaction();
+        Execute("UPDATE tag_groups SET rank = $rank WHERE id = $id;", transaction, ("$rank", rank), ("$id", groupId));
+        RemoveInvalidLinks(transaction);
+        transaction.Commit();
+    }
+
+    public long CountLinksBrokenByRank(long groupId, int rank) =>
+        CountBrokenLinks(t => Execute("UPDATE tag_groups SET rank = $rank WHERE id = $id;", t, ("$rank", rank), ("$id", groupId)));
+
+    // グループを削除しても、タグは自由タグとして残す(文書のタグはそのまま)。紐づけは外れる
+    public void DeleteGroup(long groupId)
     {
         using var transaction = connection.BeginTransaction();
-        Execute("DELETE FROM tag_attributes WHERE tag_id = $tag;", transaction, ("$tag", tagId));
-        foreach (var optionId in optionIds.Distinct())
+        Execute("UPDATE tags SET group_id = NULL WHERE group_id = $id;", transaction, ("$id", groupId));
+        Execute("DELETE FROM tag_groups WHERE id = $id;", transaction, ("$id", groupId));
+        RemoveInvalidLinks(transaction);
+        transaction.Commit();
+    }
+
+    public void MoveGroup(long groupId, int offset) =>
+        Reorder("tag_groups", GetGroups().Select(g => g.Id).ToList(), groupId, offset);
+
+    // 決定ログ Q-14: 項目(左に常に表示するタググループ)にする・やめる
+    public void SetGroupPinned(long groupId, bool pinned) => Execute(
+        pinned
+            ? "UPDATE tag_groups SET is_pinned = 1, pin_order = (SELECT COALESCE(MAX(pin_order), 0) + 1 FROM tag_groups WHERE is_pinned = 1) WHERE id = $id AND is_pinned = 0;"
+            : "UPDATE tag_groups SET is_pinned = 0 WHERE id = $id;",
+        ("$id", groupId));
+
+    public void MovePinnedGroup(long groupId, int offset)
+    {
+        var ordered = GetGroups().Where(g => g.IsPinned).OrderBy(g => g.PinOrder).ThenBy(g => g.Id).Select(g => g.Id).ToList();
+        var index = ordered.IndexOf(groupId);
+        var newIndex = index + offset;
+        if (index < 0 || newIndex < 0 || newIndex >= ordered.Count)
         {
-            Execute("INSERT INTO tag_attributes (tag_id, option_id) VALUES ($tag, $option);", transaction,
-                ("$tag", tagId), ("$option", optionId));
+            return;
+        }
+        ordered.RemoveAt(index);
+        ordered.Insert(newIndex, groupId);
+        using var transaction = connection.BeginTransaction();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            Execute("UPDATE tag_groups SET pin_order = $order WHERE id = $id;", transaction, ("$order", i + 1), ("$id", ordered[i]));
         }
         transaction.Commit();
     }
 
-    public long AddTag(string name)
+    // ---- タグ ----
+
+    public IReadOnlyList<TagSummary> GetTags()
+    {
+        var parents = Query(
+            "SELECT l.child_id, p.id, p.name FROM tag_links l JOIN tags p ON p.id = l.parent_id ORDER BY p.normalized_name;",
+            r => (ChildId: r.GetInt64(0), ParentId: r.GetInt64(1), ParentName: r.GetString(2)))
+            .ToLookup(x => x.ChildId);
+
+        return Query(
+            """
+            SELECT t.id, t.name, (SELECT COUNT(*) FROM document_tags d WHERE d.tag_id = t.id), t.group_id, g.name
+            FROM tags t LEFT JOIN tag_groups g ON g.id = t.group_id ORDER BY t.normalized_name;
+            """,
+            r =>
+            {
+                var links = parents[r.GetInt64(0)].ToList();
+                return new TagSummary(r.GetInt64(0), r.GetString(1), r.GetInt64(2),
+                    r.IsDBNull(3) ? null : r.GetInt64(3), r.IsDBNull(4) ? null : r.GetString(4),
+                    links.Select(l => l.ParentId).ToList(), links.Select(l => l.ParentName).ToList());
+            });
+    }
+
+    public long AddTag(string name, long? groupId = null, IReadOnlyCollection<long>? parentIds = null)
     {
         var cleaned = ValidateName(name, "タグ名");
         if (FindTagId(cleaned) is not null)
         {
-            throw new CatalogException("同じ名前のタグがすでにあります。");
+            throw new CatalogException("同じ名前のタグがすでにあります(タググループが違っても同じ名前は使えません)。");
         }
-        return InsertTag(cleaned);
+        var id = InsertTag(cleaned, groupId);
+        if (parentIds is { Count: > 0 })
+        {
+            SetTagParents(id, parentIds);
+        }
+        return id;
     }
 
-    // 取り込み時の入力用(決定ログ A-3): 同じ名前のタグがあればそれを使い、なければ登録する
-    public long GetOrCreateTag(string name) => GetOrCreateTag(name, []);
-
-    // 決定ログ D-4: 新しく作るときだけ、指定した選択肢を属性として付ける(既存のタグの属性は変えない)
-    public long GetOrCreateTag(string name, IReadOnlyCollection<long> attributeOptionIdsForNewTag)
+    // 取り込み時の入力用(決定ログ A-3): 同じ名前のタグがあればそれを使い(グループ・紐づけは変えない)、なければ作る(Q-12)
+    public long GetOrCreateTag(string name, long? groupId = null, IReadOnlyCollection<long>? parentIdsForNewTag = null)
     {
         var cleaned = ValidateName(name, "タグ名");
         if (FindTagId(cleaned) is { } existing)
         {
             return existing;
         }
-        var id = InsertTag(cleaned);
-        if (attributeOptionIdsForNewTag.Count > 0)
+        var id = InsertTag(cleaned, groupId);
+        if (parentIdsForNewTag is { Count: > 0 })
         {
-            SetTagAttributes(id, attributeOptionIdsForNewTag);
+            SetTagParents(id, parentIdsForNewTag, ignoreInvalid: true);
         }
         return id;
+    }
+
+    // グループを変えると、合わなくなった紐づけは外れる
+    public void SetTagGroup(long tagId, long? groupId)
+    {
+        using var transaction = connection.BeginTransaction();
+        Execute("UPDATE tags SET group_id = $group WHERE id = $id;", transaction, ("$group", (object?)groupId ?? DBNull.Value), ("$id", tagId));
+        RemoveInvalidLinks(transaction);
+        transaction.Commit();
+    }
+
+    public long CountLinksBrokenByTagGroup(long tagId, long? groupId) =>
+        CountBrokenLinks(t => Execute("UPDATE tags SET group_id = $group WHERE id = $id;", t, ("$group", (object?)groupId ?? DBNull.Value), ("$id", tagId)));
+
+    // 決定ログ Q-3: 紐づけ先は 1 つ上の順位のタグだけ(複数可)
+    public void SetTagParents(long tagId, IEnumerable<long> parentIds, bool ignoreInvalid = false)
+    {
+        var tags = GetTags().ToDictionary(t => t.Id);
+        var ranks = GetGroups().ToDictionary(g => g.Id, g => g.Rank);
+        int? RankOf(long id) => tags.TryGetValue(id, out var tag) && tag.GroupId is { } group ? ranks[group] : null;
+
+        var valid = new List<long>();
+        foreach (var parentId in parentIds.Distinct().Where(p => p != tagId))
+        {
+            if (RankOf(tagId) is { } rank && rank >= 2 && RankOf(parentId) == rank - 1)
+            {
+                valid.Add(parentId);
+            }
+            else if (!ignoreInvalid)
+            {
+                throw new CatalogException("紐づけられるのは、1 つ上の順位のタググループのタグだけです。");
+            }
+        }
+        using var transaction = connection.BeginTransaction();
+        Execute("DELETE FROM tag_links WHERE child_id = $id;", transaction, ("$id", tagId));
+        foreach (var parentId in valid)
+        {
+            Execute("INSERT INTO tag_links (child_id, parent_id) VALUES ($child, $parent);", transaction, ("$child", tagId), ("$parent", parentId));
+        }
+        transaction.Commit();
     }
 
     public void RenameTag(long tagId, string name)
@@ -206,9 +320,13 @@ public sealed class CatalogRepository(SqliteConnection connection)
         using var transaction = connection.BeginTransaction();
         Execute("INSERT OR IGNORE INTO document_tags (document_id, tag_id) SELECT document_id, $target FROM document_tags WHERE tag_id = $source;",
             transaction, ("$target", targetTagId), ("$source", sourceTagId));
-        Execute("INSERT OR IGNORE INTO tag_attributes (tag_id, option_id) SELECT $target, option_id FROM tag_attributes WHERE tag_id = $source;",
-            transaction, ("$target", targetTagId), ("$source", sourceTagId));
+        // 紐づけも統合先に引き継ぐ(統合先のグループで合わなくなるものは外れる)
+        Execute("""
+            INSERT OR IGNORE INTO tag_links (child_id, parent_id) SELECT $target, parent_id FROM tag_links WHERE child_id = $source AND parent_id <> $target;
+            INSERT OR IGNORE INTO tag_links (child_id, parent_id) SELECT child_id, $target FROM tag_links WHERE parent_id = $source AND child_id <> $target;
+            """, transaction, ("$target", targetTagId), ("$source", sourceTagId));
         Execute("DELETE FROM tags WHERE id = $source;", transaction, ("$source", sourceTagId));
+        RemoveInvalidLinks(transaction);
         transaction.Commit();
     }
 
@@ -239,9 +357,39 @@ public sealed class CatalogRepository(SqliteConnection connection)
         return command.ExecuteScalar() as long?;
     }
 
-    private long InsertTag(string cleanedName) => InsertReturningId(
-        "INSERT INTO tags (name, normalized_name) VALUES ($name, $normalized) RETURNING id;",
-        ("$name", cleanedName), ("$normalized", NameNormalizer.Normalize(cleanedName)));
+    private long InsertTag(string cleanedName, long? groupId) => InsertReturningId(
+        "INSERT INTO tags (name, normalized_name, group_id) VALUES ($name, $normalized, $group) RETURNING id;",
+        ("$name", cleanedName), ("$normalized", NameNormalizer.Normalize(cleanedName)), ("$group", (object?)groupId ?? DBNull.Value));
+
+    private static void ValidateRank(int rank)
+    {
+        if (rank is < TagGroup.IndependentRank or > TagGroup.MaxRank)
+        {
+            throw new CatalogException($"順位は 1〜{TagGroup.MaxRank} か「独立」を選んでください。");
+        }
+    }
+
+    // 紐づけは「順位 2 以降のタグ → 1 つ上の順位のタグ」だけが有効。グループや順位が変わって合わなくなったものを外す
+    private const string InvalidLinks = """
+        SELECT l.child_id, l.parent_id FROM tag_links l
+        JOIN tags c ON c.id = l.child_id LEFT JOIN tag_groups cg ON cg.id = c.group_id
+        JOIN tags p ON p.id = l.parent_id LEFT JOIN tag_groups pg ON pg.id = p.group_id
+        WHERE cg.rank IS NULL OR pg.rank IS NULL OR cg.rank < 2 OR pg.rank <> cg.rank - 1
+        """;
+
+    private void RemoveInvalidLinks(SqliteTransaction transaction) => Execute(
+        $"DELETE FROM tag_links WHERE (child_id, parent_id) IN ({InvalidLinks});", transaction);
+
+    // 変更を試しに行い、外れる紐づけの件数を数えて元に戻す
+    private long CountBrokenLinks(Action<SqliteTransaction> change)
+    {
+        using var transaction = connection.BeginTransaction();
+        change(transaction);
+        using var command = CreateCommand($"SELECT COUNT(*) FROM ({InvalidLinks});", transaction, []);
+        var count = (long)command.ExecuteScalar()!;
+        transaction.Rollback();
+        return count;
+    }
 
     private static string ValidateName(string name, string label)
     {

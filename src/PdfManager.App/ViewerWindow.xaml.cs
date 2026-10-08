@@ -7,6 +7,7 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using PdfManager.App.Services;
 using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
 
@@ -41,6 +42,7 @@ public partial class ViewerWindow : FluentWindow
     public ViewerWindow(Action<string> onOpened)
     {
         InitializeComponent();
+        WindowPlacement.KeepOnScreen(this);
         _onOpened = onOpened;
         TabList.ItemsSource = _tabs;
         SystemThemeWatcher.Watch(this);

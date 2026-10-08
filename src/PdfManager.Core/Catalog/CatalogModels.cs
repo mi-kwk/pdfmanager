@@ -51,12 +51,39 @@ public sealed record FieldDefinition(long Id, string Name, FieldType Type, long 
     public string TypeLabel => FieldTypes.DisplayName(Type);
 }
 
-// 自由タグの属性 = 選択肢型の項目の選択肢(決定ログ D-1)
-public sealed record TagAttribute(long OptionId, string FieldName, string Value);
-
-public sealed record TagSummary(long Id, string Name, long UsageCount, IReadOnlyList<TagAttribute> Attributes)
+// タググループ(決定ログ R-11、Q-1〜Q-14)。順位は 1〜5、0 は「独立」(紐づけなし、順位 1 と同じ位置に表示)。
+// IsPinned のグループが「項目」で、メイン画面の左に常に表示する
+public sealed record TagGroup(long Id, string Name, int Rank, bool IsPinned, int PinOrder, long TagCount)
 {
-    public string AttributeText => string.Join("、", Attributes.Select(a => a.Value));
+    public const int IndependentRank = 0;
+    public const int MaxRank = 5;
+
+    public bool IsIndependent => Rank == IndependentRank;
+
+    public string RankLabel => TagRanks.Label(Rank);
+
+    // 登録・タグ設定の画面での並び(独立は順位 1 と同じ位置)
+    public int DisplayRank => IsIndependent ? 1 : Rank;
+}
+
+public static class TagRanks
+{
+    public static IReadOnlyList<int> All { get; } = [1, 2, 3, 4, 5, TagGroup.IndependentRank];
+
+    public static string Label(int rank) => rank == TagGroup.IndependentRank ? "独立" : $"順位 {rank}";
+}
+
+// GroupId が null のタグは自由タグ。ParentIds は 1 つ上の順位の紐づけ先
+public sealed record TagSummary(long Id, string Name, long UsageCount, long? GroupId, string? GroupName, IReadOnlyList<long> ParentIds, IReadOnlyList<string> ParentNames)
+{
+    public string GroupLabel => GroupName ?? "自由タグ";
+
+    public string ParentText => string.Join("、", ParentNames);
+
+    public bool HasParents => ParentNames.Count > 0;
+
+    // 一覧などの 2 行目:「分類２ ・ 漫画、雑誌」
+    public string DetailText => ParentNames.Count == 0 ? GroupLabel : $"{GroupLabel} ・ {string.Join("、", ParentNames)}";
 }
 
 // 利用者の入力が原因の失敗。メッセージはそのまま画面に表示する

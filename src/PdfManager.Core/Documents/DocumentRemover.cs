@@ -12,10 +12,11 @@ public sealed class DocumentRemover(DataFolder dataFolder, Action<string>? dispo
 
     public bool UsesRecycleBin => RecycleBin.IsAvailableFor(dataFolder.Root);
 
-    // PDF をごみ箱へ移せなかった場合は例外を投げ、データベースからは削除しない
-    public void Delete(string documentId, string fileName)
+    // PDF をごみ箱へ移せなかった場合は例外を投げ、データベースからは削除しない。
+    // サブライブラリにある文書は storageFolder にサブの場所を渡す(サブの写しの削除は呼び出し側で行う、決定ログ S-12)
+    public void Delete(string documentId, string fileName, DataFolder? storageFolder = null)
     {
-        var stored = dataFolder.GetPdfPath(documentId);
+        var stored = (storageFolder ?? dataFolder).GetPdfPath(documentId);
         if (File.Exists(stored))
         {
             // ごみ箱で中身がわかるよう、利用者向けのファイル名に変えてから移す
@@ -32,10 +33,12 @@ public sealed class DocumentRemover(DataFolder dataFolder, Action<string>? dispo
             }
         }
 
-        var thumbnail = dataFolder.GetThumbnailPath(documentId);
-        if (File.Exists(thumbnail))
+        foreach (var thumbnail in new[] { dataFolder.GetThumbnailPath(documentId), (storageFolder ?? dataFolder).GetThumbnailPath(documentId) }.Distinct())
         {
-            File.Delete(thumbnail);
+            if (File.Exists(thumbnail))
+            {
+                File.Delete(thumbnail);
+            }
         }
 
         using var connection = PdfManagerDatabase.Open(dataFolder.DatabasePath);

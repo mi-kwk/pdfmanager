@@ -23,6 +23,7 @@
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+        <conv:BoolToOpacityConverter x:Key="ExcludedOpacity" TrueOpacity="0.45" />
         <Style x:Key="PaneBorder" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
@@ -84,11 +85,17 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <DockPanel Margin="0,4">
+                                    <!-- 決定ログ R-4: 一覧に残したまま「取り込まない」にする。印を付けたものは薄く表示し、登録しない -->
+                                    <CheckBox DockPanel.Dock="Right" Content="取り込まない" IsChecked="{Binding IsExcluded}" FontSize="12"
+                                              Margin="8,0,0,0" VerticalAlignment="Center" MinWidth="0" Padding="4,0,0,0"
+                                              Visibility="{Binding IsReady, Converter={StaticResource BoolToVisibility}}"
+                                              AutomationProperties.Name="{Binding DisplayName, StringFormat={}{0}を取り込まない}" />
                                     <Border DockPanel.Dock="Left" Width="40" Height="52" Margin="0,0,10,0" CornerRadius="3"
-                                            BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="White">
+                                            BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="White"
+                                            Opacity="{Binding IsExcluded, Converter={StaticResource ExcludedOpacity}}">
                                         <Image Source="{Binding Preview}" Stretch="Uniform" />
                                     </Border>
-                                    <StackPanel VerticalAlignment="Center">
+                                    <StackPanel VerticalAlignment="Center" Opacity="{Binding IsExcluded, Converter={StaticResource ExcludedOpacity}}">
                                         <ui:TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                                         <ui:TextBlock Text="{Binding StatusText}" FontSize="12" TextTrimming="CharacterEllipsis"
                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -128,8 +135,14 @@
         <DockPanel Grid.Row="3" Margin="16,12,16,16" LastChildFill="True">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="12,0,0,0">
                 <ui:Button Content="閉じる" Click="OnCloseClick" Margin="0,0,8,0" />
-                <ui:Button Content="{Binding RegisterText}" Appearance="Primary" Icon="{ui:SymbolIcon Save24}"
-                           Command="{Binding RegisterCommand}" AutomationProperties.Name="登録" />
+                <!-- 決定ログ R-5: 「すべて登録」は設定画面でオンにしたときだけ表示する -->
+                <ui:Button Content="{Binding RegisterAllText}" Icon="{ui:SymbolIcon SaveMultiple24}" Margin="0,0,8,0"
+                           Command="{Binding RegisterAllCommand}" AutomationProperties.Name="すべて登録"
+                           Visibility="{Binding ShowRegisterAll, Converter={StaticResource BoolToVisibility}}"
+                           ToolTip="「取り込まない」の印がないものを、すべて登録します" />
+                <ui:Button Content="{Binding RegisterSelectedText}" Appearance="Primary" Icon="{ui:SymbolIcon Save24}"
+                           Command="{Binding RegisterSelectedCommand}" AutomationProperties.Name="選択中を登録"
+                           ToolTip="左の一覧で選んでいる PDF を登録し、次の PDF を選びます" />
             </StackPanel>
             <ui:InfoBar IsOpen="{Binding IsResultOpen, Mode=TwoWay}" IsClosable="True"
                         Title="{Binding ResultTitle}" Message="{Binding ResultMessage}" Severity="{Binding ResultSeverity}" />

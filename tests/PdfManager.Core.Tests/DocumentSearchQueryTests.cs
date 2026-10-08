@@ -112,6 +112,29 @@ public sealed class DocumentSearchQueryTests : IDisposable
         Assert.Equal(new Dictionary<string, int> { ["秋葉原エリア"] = 1 }, areas);
     }
 
+    // 決定ログ Q-5: タグが 1 つも付いていない PDF は「未設定」
+    [Fact]
+    public void UntaggedOnly_FindsDocumentsWithoutTags()
+    {
+        var index = DocumentSearchIndex.Load(_connection);
+
+        Assert.Equal(["d"], Ids(new SearchQuery { UntaggedOnly = true }));
+        Assert.Equal(1, DocumentSearchIndex.CountUntagged(index.Search(new SearchQuery())));
+    }
+
+    // 決定ログ Q-6: 補助項目は、入っている値を選んで絞り込める(年月は 2026-08 の形)
+    [Fact]
+    public void FieldValues_CanBeChosenFromRegisteredValues()
+    {
+        var index = DocumentSearchIndex.Load(_connection);
+
+        Assert.Equal(["2026-09", "2026-08", "2026-07"], index.DistinctFieldValues(_month));
+        Assert.Equal(["1500", "900", "500"], index.DistinctFieldValues(_price));
+        Assert.Equal(["b"], Ids(new SearchQuery { FieldConditions = [new FieldCondition(_month) { AnyOfDisplay = new HashSet<string> { "2026-08" } }] }));
+        Assert.Equal(["c", "a"], Ids(new SearchQuery { FieldConditions = [new FieldCondition(_month) { AnyOfDisplay = new HashSet<string> { "2026-07", "2026-09" } }] }));
+        Assert.Equal(1, DocumentSearchIndex.CountFieldValues(index.Search(new SearchQuery { IncludedTagIds = [_manager] }), _month)["2026-09"]);
+    }
+
     private void Add(DocumentRepository repository, string id, string title, int day, long[] tags, Dictionary<long, string> fields, int rating = 0)
     {
         var catalog = new CatalogRepository(_connection).GetFields();

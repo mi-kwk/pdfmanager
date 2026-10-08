@@ -26,8 +26,13 @@ public partial class ImportItem(string sourcePath) : EditableDocument
     public override IReadOnlyList<string> TitleCandidates => Prepared?.TitleCandidates ?? [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText), nameof(IsReady))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(IsReady), nameof(IsRegistrable))]
     public partial ImportItemStatus Status { get; set; } = ImportItemStatus.Preparing;
+
+    // 決定ログ R-4(案B): 一覧に残したまま、取り込まない印を付ける
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(IsRegistrable))]
+    public partial bool IsExcluded { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
@@ -40,8 +45,12 @@ public partial class ImportItem(string sourcePath) : EditableDocument
 
     public bool IsReady => Status == ImportItemStatus.Ready;
 
+    // 登録の対象になるもの(準備ができていて、取り込まない印がない)
+    public bool IsRegistrable => IsReady && !IsExcluded;
+
     public string StatusText => Status switch
     {
+        ImportItemStatus.Ready when IsExcluded => "登録しません",
         ImportItemStatus.Preparing => "準備中…",
         ImportItemStatus.Ready => Message is null ? "準備完了" : $"準備完了(⚠ {Message})",
         ImportItemStatus.Duplicate => $"⚠ {Message}(登録しません)",

@@ -15,11 +15,12 @@ public partial class ImportWindow : FluentWindow
     private readonly IUserDialogs _dialogs;
     private bool _closeConfirmed;
 
-    public ImportWindow(DataFolder dataFolder, IEnumerable<string> paths, PdfManager.Core.Documents.DocumentDetail? newVersionOf = null)
+    public ImportWindow(DataFolder dataFolder, IEnumerable<string> paths, PdfManager.Core.Documents.DocumentDetail? newVersionOf = null, bool showRegisterAll = false)
     {
         InitializeComponent();
+        WindowPlacement.KeepOnScreen(this);
         _dialogs = new WpfUiDialogs(this);
-        _viewModel = new ImportViewModel(dataFolder, _dialogs, paths, newVersionOf);
+        _viewModel = new ImportViewModel(dataFolder, _dialogs, paths, newVersionOf, showRegisterAll);
         DataContext = _viewModel;
         SystemThemeWatcher.Watch(this);
         Closing += OnClosing;
@@ -50,7 +51,7 @@ public partial class ImportWindow : FluentWindow
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
-    private async void OnClosing(object? sender, CancelEventArgs e)
+    private void OnClosing(object? sender, CancelEventArgs e)
     {
         if (_closeConfirmed)
         {
@@ -66,10 +67,14 @@ public partial class ImportWindow : FluentWindow
             return;
         }
         e.Cancel = true;
-        if (await _dialogs.ConfirmAsync("取り込みを閉じる", $"まだ登録していない PDF が {_viewModel.ReadyCount} 件あります。登録せずに閉じますか?", "閉じる"))
+        // 閉じる途中の処理の中では Close を呼べない(呼ぶと例外でアプリが落ちる)ため、この処理が終わってから確認して閉じ直す
+        Dispatcher.BeginInvoke(async () =>
         {
-            _closeConfirmed = true;
-            Close();
-        }
+            if (await _dialogs.ConfirmAsync("取り込みを閉じる", $"まだ登録していない PDF が {_viewModel.ReadyCount} 件あります。登録せずに閉じますか?", "閉じる"))
+            {
+                _closeConfirmed = true;
+                Close();
+            }
+        });
     }
 }

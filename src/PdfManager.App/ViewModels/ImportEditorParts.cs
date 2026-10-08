@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using PdfManager.Core.Catalog;
 using PdfManager.Core.Import;
 
@@ -9,10 +10,37 @@ public sealed record PrefixOption(FileNamePrefixChoice? Choice, string Label)
     public static PrefixOption None { get; } = new(null, "(使わない)");
 }
 
-public sealed record AttributeFilterOption(long? OptionId, string Label)
+// 登録・タグ設定の画面の、タググループ 1 つ分の欄(決定ログ R-11 ②)。Group が null なら自由タグの欄
+public sealed partial class TagSection(TagGroup? group, Action onSearchChanged, Func<TagSection, Task> onEnter) : ObservableObject
 {
-    public static AttributeFilterOption All { get; } = new(null, "すべての属性");
+    public TagGroup? Group { get; } = group;
+
+    public string Title => Group?.Name ?? "自由タグ";
+
+    public string RankText => Group?.RankLabel ?? "";
+
+    public bool IsDependent => Group is { Rank: >= 2 };
+
+    public string SearchName => $"{Title}の検索";
+
+    [ObservableProperty]
+    public partial string Search { get; set; } = "";
+
+    [ObservableProperty]
+    public partial IReadOnlyList<TagChoice> Choices { get; set; } = [];
+
+    [ObservableProperty]
+    public partial string Hint { get; set; } = "";
+
+    partial void OnSearchChanged(string value) => onSearchChanged();
+
+    // 決定ログ Q-12: 検索欄で Enter を押すと、見つかればそのタグを付け、なければこのグループに新しく作って付ける
+    [RelayCommand]
+    private Task EnterAsync() => onEnter(this);
 }
+
+// 詳細エリアに表示する、付いているタグ(グループごとに 1 行、決定ログ R-11 ④)
+public sealed record AssignedTagLine(string GroupName, string TagsText);
 
 // 項目 1 つ分の入力欄。複数選択で値がそろっていないときは「(複数の値)」を表示する(決定ログ F-6)
 public partial class FieldEditor : ObservableObject
@@ -91,11 +119,11 @@ public partial class TagChoice : ObservableObject
     private readonly Action<TagChoice> _onToggled;
     private bool _loading;
 
-    public TagChoice(string key, string name, string attributeText, bool isNew, bool? isChecked, Action<TagChoice> onToggled)
+    public TagChoice(string key, string name, string detail, bool isNew, bool? isChecked, Action<TagChoice> onToggled)
     {
         Key = key;
         Name = name;
-        AttributeText = attributeText;
+        Detail = detail;
         IsNew = isNew;
         _onToggled = onToggled;
         _loading = true;
@@ -107,7 +135,10 @@ public partial class TagChoice : ObservableObject
 
     public string Name { get; }
 
-    public string AttributeText { get; }
+    // 2 行目(紐づけ先の名前など。なければ空)
+    public string Detail { get; }
+
+    public bool HasDetail => Detail.Length > 0;
 
     public bool IsNew { get; }
 

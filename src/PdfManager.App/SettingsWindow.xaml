@@ -3,13 +3,14 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="設定"
-                 Width="760" Height="600" MinWidth="600" MinHeight="480"
+                 Width="820" Height="820" MinWidth="640" MinHeight="600"
                  WindowStartupLocation="CenterOwner"
                  ShowInTaskbar="False"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
                  WindowCornerPreference="Round">
     <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <Style x:Key="PaneBorder" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
@@ -25,10 +26,17 @@
         </Grid.RowDefinitions>
         <ui:TitleBar Grid.Row="0" Title="設定" ShowMinimize="False" ShowMaximize="False" />
 
-        <DockPanel Grid.Row="1" Margin="16,0,16,16">
-            <Border DockPanel.Dock="Top" Style="{StaticResource PaneBorder}" Margin="0,0,0,12">
+        <Grid Grid.Row="1" Margin="16,0,16,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="3*" MinHeight="200" />
+                <RowDefinition Height="2*" MinHeight="140" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{StaticResource PaneBorder}" Margin="0,0,0,12">
                 <StackPanel>
-                    <ui:TextBlock Text="現在のライブラリ" FontTypography="BodyStrong" Margin="0,0,0,8" />
+                    <ui:TextBlock Text="現在のライブラリ(メイン)" FontTypography="BodyStrong" Margin="0,0,0,8" />
                     <ui:TextBlock x:Name="CurrentName" FontTypography="Subtitle" />
                     <ui:TextBlock x:Name="CurrentFolder" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                     <ui:TextBlock x:Name="CurrentStats" Text="集計中…" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,12" />
@@ -42,7 +50,66 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource PaneBorder}">
+            <!-- サブライブラリ(決定ログ S-1、S-5、S-8、S-15) -->
+            <Border Grid.Row="1" Style="{StaticResource PaneBorder}" Margin="0,0,0,12">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <ui:Button DockPanel.Dock="Right" Content="接続を確認" Icon="{ui:SymbolIcon ArrowSync24}" Appearance="Transparent"
+                                   Click="OnCheckSubsClick" ToolTip="外付け HDD などをつないだあとに、サブライブラリを探し直します" />
+                        <ui:TextBlock Text="サブライブラリ" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <ui:TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,8"
+                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                  Text="見る回数の少ない PDF や過去の PDF を、別のドライブや外付け HDD に置く場所です。一覧の右クリック「保存先を移す」で移します。つながっていないサブの PDF も一覧・検索には出ますが、表示のみになります。" />
+                    <WrapPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                        <ui:Button Content="新しいサブを作る" Appearance="Primary" Icon="{ui:SymbolIcon FolderAdd24}" Click="OnCreateSubClick" Margin="0,0,8,8" />
+                        <ui:Button Content="名前の変更" Icon="{ui:SymbolIcon Edit24}" Click="OnRenameSubClick" Margin="0,0,8,8" />
+                        <ui:Button Content="場所を指定し直す" Icon="{ui:SymbolIcon Search24}" Click="OnRelocateSubClick" Margin="0,0,8,8"
+                                   ToolTip="サブライブラリのフォルダを移した・2 か所で見つかったときに、使う .pdflib ファイルを選びます" />
+                        <ui:Button Content="エクスプローラーで開く" Icon="{ui:SymbolIcon Open24}" Click="OnExplorerSubClick" Margin="0,0,8,8"
+                                   AutomationProperties.Name="サブをエクスプローラーで開く" />
+                        <ui:Button Content="登録の解除" Icon="{ui:SymbolIcon Dismiss24}" Click="OnRemoveSubClick" Margin="0,0,8,8"
+                                   ToolTip="中の PDF が 0 件のときだけ解除できます(フォルダは消しません)" />
+                    </WrapPanel>
+                    <Grid>
+                        <ui:TextBlock x:Name="NoSubsText" Text="サブライブラリはまだありません。「新しいサブを作る」で作れます。" TextWrapping="Wrap"
+                                      Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4" />
+                        <ListBox x:Name="SubList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="サブライブラリの一覧">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,2">
+                                        <!-- 選択中の行の色に埋もれないよう、色付きの札にする -->
+                                        <Border DockPanel.Dock="Right" Margin="12,0,0,0" Padding="8,2" CornerRadius="4" VerticalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#FF0F7B0F" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                                                            <Setter Property="Background" Value="#FFC4511A" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{Binding StatusText}" Foreground="White" FontSize="12" />
+                                        </Border>
+                                        <StackPanel>
+                                            <ui:TextBlock Text="{Binding Name}" FontTypography="BodyStrong" />
+                                            <ui:TextBlock Text="{Binding Folder}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            <ui:TextBlock Text="{Binding Usage}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            <ui:TextBlock Text="{Binding Note}" FontSize="12" TextWrapping="Wrap"
+                                                          Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                                          Visibility="{Binding HasNote, Converter={StaticResource BoolToVisibility}}" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Row="2" Style="{StaticResource PaneBorder}">
                 <DockPanel>
                     <ui:TextBlock DockPanel.Dock="Top" Text="最近使ったライブラリ" FontTypography="BodyStrong" Margin="0,0,0,8" />
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
@@ -67,6 +134,18 @@
                     </ListBox>
                 </DockPanel>
             </Border>
-        </DockPanel>
+
+            <!-- この PC での取り込み画面の設定(決定ログ R-5) -->
+            <Border Grid.Row="3" Style="{StaticResource PaneBorder}" Margin="0,12,0,0">
+                <StackPanel>
+                    <ui:TextBlock Text="取り込み画面(この PC の設定)" FontTypography="BodyStrong" Margin="0,0,0,4" />
+                    <CheckBox x:Name="ShowRegisterAllBox" Content="「すべて登録」ボタンも表示する"
+                              Checked="OnShowRegisterAllChanged" Unchecked="OnShowRegisterAllChanged"
+                              AutomationProperties.Name="「すべて登録」ボタンも表示する" />
+                    <ui:TextBlock Text="オフのときは「選択中を登録」だけを表示します(1 件ずつ入力して登録する使い方)。"
+                                  TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </ui:FluentWindow>

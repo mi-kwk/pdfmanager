@@ -209,67 +209,119 @@ public sealed class CatalogRepositoryTests : IDisposable
         Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM documents;"));
     }
 
-    [Fact]
-    public void SetTagAttributes_ReplacesAttributesAndAllowsMultiple()
+    // ---- タググループ・順位・紐づけ(決定ログ R-11) ----
+
+    // 例:分類１(順位 1)= 漫画・雑誌、分類２(順位 2)= ドラゴンボール・ジャンプ、分類３(順位 3)= 悟空、作者(独立)
+    private (long Bunrui1, long Bunrui2, long Bunrui3, long Author, long Manga, long Magazine) CreateBookGroups()
     {
-        var area = _catalog.AddField("エリア", FieldType.Select);
-        var ueno = _catalog.AddOption(area, "上野エリア");
-        var akiba = _catalog.AddOption(area, "秋葉原エリア");
-        var manager = _catalog.AddTag("■■マネージャー");
+        var bunrui1 = _catalog.AddGroup("分類１", 1);
+        var bunrui2 = _catalog.AddGroup("分類２", 2);
+        var bunrui3 = _catalog.AddGroup("分類３", 3);
+        var author = _catalog.AddGroup("作者", TagGroup.IndependentRank);
+        return (bunrui1, bunrui2, bunrui3, author, _catalog.AddTag("漫画", bunrui1), _catalog.AddTag("雑誌", bunrui1));
+    }
 
-        _catalog.SetTagAttributes(manager, [akiba, ueno]);
-        var both = Assert.Single(_catalog.GetTags());
-        _catalog.SetTagAttributes(manager, [akiba]);
-        var one = Assert.Single(_catalog.GetTags());
+    private TagSummary Tag(string name) => _catalog.GetTags().Single(t => t.Name == name);
 
-        Assert.Equal(["上野エリア", "秋葉原エリア"], both.Attributes.Select(a => a.Value));
-        Assert.Equal("上野エリア、秋葉原エリア", both.AttributeText);
-        Assert.Equal([("エリア", "秋葉原エリア")], one.Attributes.Select(a => (a.FieldName, a.Value)));
+    [Fact]
+    public void Groups_HaveRanksAndUniqueNames()
+    {
+        CreateBookGroups();
+
+        Assert.Equal([("分類１", 1), ("分類２", 2), ("分類３", 3), ("作者", 0)], _catalog.GetGroups().Select(g => (g.Name, g.Rank)));
+        Assert.Equal("独立", _catalog.GetGroups()[3].RankLabel);
+        Assert.Throws<CatalogException>(() => _catalog.AddGroup(" 分類1 ", 1));
+        Assert.Throws<CatalogException>(() => _catalog.AddGroup("分類６", 6));
     }
 
     [Fact]
-    public void TagAttribute_FollowsOptionRenameAndDisappearsWithOption()
+    public void Links_OnlyToTagsOneRankAbove_AndAllowMultipleParents()
     {
-        var area = _catalog.AddField("エリア", FieldType.Select);
-        var ueno = _catalog.AddOption(area, "上野");
-        var manager = _catalog.AddTag("〇〇マネージャー");
-        _catalog.SetTagAttributes(manager, [ueno]);
+        var g = CreateBookGroups();
+        var jump = _catalog.AddTag("ジャンプ", g.Bunrui2, [g.Manga, g.Magazine]);
+        var dragonBall = _catalog.AddTag("ドラゴンボール", g.Bunrui2, [g.Manga]);
+        var goku = _catalog.AddTag("悟空", g.Bunrui3, [dragonBall]);
 
-        _catalog.RenameOption(ueno, "上野エリア");
-        var renamed = Assert.Single(Assert.Single(_catalog.GetTags()).Attributes).Value;
-        _catalog.DeleteOption(ueno);
-
-        Assert.Equal("上野エリア", renamed);
-        Assert.Empty(Assert.Single(_catalog.GetTags()).Attributes);
+        Assert.Equal(["漫画", "雑誌"], Tag("ジャンプ").ParentNames);
+        Assert.Equal("分類２ ・ 漫画、雑誌", Tag("ジャンプ").DetailText);
+        Assert.Equal([dragonBall], Tag("悟空").ParentIds);
+        // 順位 3 から順位 1 へは紐づけられない。独立・自由タグは紐づけを持てない
+        Assert.Throws<CatalogException>(() => _catalog.SetTagParents(goku, [g.Manga]));
+        var author = _catalog.AddTag("〇〇〇", g.Author);
+        Assert.Throws<CatalogException>(() => _catalog.SetTagParents(author, [g.Manga]));
+        Assert.Throws<CatalogException>(() => _catalog.AddTag("バトル", null, [g.Manga]));
+        Assert.Equal("自由タグ", Tag("バトル").GroupLabel);
     }
 
     [Fact]
-    public void TagAttribute_DisappearsWhenFieldStopsBeingSelectType()
+    public void ChangingRankOrGroup_RemovesLinksThatNoLongerFit()
     {
-        var area = _catalog.AddField("エリア", FieldType.Select);
-        var ueno = _catalog.AddOption(area, "上野エリア");
-        var manager = _catalog.AddTag("■■マネージャー");
-        _catalog.SetTagAttributes(manager, [ueno]);
+        var g = CreateBookGroups();
+        var dragonBall = _catalog.AddTag("ドラゴンボール", g.Bunrui2, [g.Manga]);
+        _catalog.AddTag("悟空", g.Bunrui3, [dragonBall]);
 
-        _catalog.ChangeFieldType(area, FieldType.Text);
+        Assert.Equal(2L, _catalog.CountLinksBrokenByRank(g.Bunrui2, 4));
+        Assert.Equal(2L, Scalar("SELECT COUNT(*) FROM tag_links;"));
+        _catalog.SetTagGroup(dragonBall, null);
 
-        Assert.Empty(Assert.Single(_catalog.GetTags()).Attributes);
+        Assert.Empty(Tag("ドラゴンボール").ParentIds);
+        Assert.Empty(Tag("悟空").ParentIds);
     }
 
     [Fact]
-    public void MergeTags_CarriesOverAttributes()
+    public void DeleteGroup_KeepsTagsAsFreeTags()
     {
-        var area = _catalog.AddField("エリア", FieldType.Select);
-        var ueno = _catalog.AddOption(area, "上野エリア");
-        var akiba = _catalog.AddOption(area, "秋葉原エリア");
-        var source = _catalog.AddTag("■■MGR");
-        var target = _catalog.AddTag("■■マネージャー");
-        _catalog.SetTagAttributes(source, [ueno, akiba]);
-        _catalog.SetTagAttributes(target, [ueno]);
+        var g = CreateBookGroups();
+        InsertDocument("d1");
+        LinkTag("d1", g.Manga);
+        _catalog.SetGroupPinned(g.Bunrui1, true);
+
+        _catalog.DeleteGroup(g.Bunrui1);
+
+        Assert.Null(Tag("漫画").GroupId);
+        Assert.Equal(1, Tag("漫画").UsageCount);
+        Assert.DoesNotContain(_catalog.GetGroups(), x => x.Name == "分類１");
+    }
+
+    [Fact]
+    public void PinnedGroups_AreItemsInOrder()
+    {
+        var g = CreateBookGroups();
+
+        _catalog.SetGroupPinned(g.Author, true);
+        _catalog.SetGroupPinned(g.Bunrui1, true);
+        _catalog.MovePinnedGroup(g.Bunrui1, -1);
+        _catalog.SetGroupPinned(g.Bunrui2, true);
+        _catalog.SetGroupPinned(g.Bunrui2, false);
+
+        Assert.Equal(["分類１", "作者"], _catalog.GetGroups().Where(x => x.IsPinned).OrderBy(x => x.PinOrder).Select(x => x.Name));
+    }
+
+    [Fact]
+    public void GetOrCreateTag_NewTagGetsGroupAndParents_ExistingTagIsUnchanged()
+    {
+        var g = CreateBookGroups();
+
+        var naruto = _catalog.GetOrCreateTag("ナルト", g.Bunrui2, [g.Manga]);
+        var again = _catalog.GetOrCreateTag("ナルト", g.Bunrui3, [g.Magazine]);
+
+        Assert.Equal(naruto, again);
+        Assert.Equal(g.Bunrui2, Tag("ナルト").GroupId);
+        Assert.Equal(["漫画"], Tag("ナルト").ParentNames);
+    }
+
+    [Fact]
+    public void MergeTags_CarriesOverLinks()
+    {
+        var g = CreateBookGroups();
+        var source = _catalog.AddTag("ドラゴン ボール", g.Bunrui2, [g.Magazine]);
+        var target = _catalog.AddTag("ドラゴンボール", g.Bunrui2, [g.Manga]);
+        _catalog.AddTag("悟空", g.Bunrui3, [source]);
 
         _catalog.MergeTags(source, target);
 
-        Assert.Equal(["上野エリア", "秋葉原エリア"], Assert.Single(_catalog.GetTags()).Attributes.Select(a => a.Value));
+        Assert.Equal(["漫画", "雑誌"], Tag("ドラゴンボール").ParentNames);
+        Assert.Equal([target], Tag("悟空").ParentIds);
     }
 
     private void InsertDocument(string id) => Exec($"""
