@@ -34,6 +34,9 @@ public sealed record FieldCondition(long FieldId)
 
     // 選択肢:どれかに一致
     public IReadOnlySet<string>? AnyOf { get; init; }
+
+    // 補助項目の値(表示する形。年月は 2026-10)のどれかに一致(決定ログ Q-6「登録された内容を選択」)
+    public IReadOnlySet<string>? AnyOfDisplay { get; init; }
 }
 
 public sealed record SearchQuery
@@ -45,6 +48,9 @@ public sealed record SearchQuery
     public IReadOnlyCollection<long> IncludedTagIds { get; init; } = [];
 
     public IReadOnlyCollection<long> ExcludedTagIds { get; init; } = [];
+
+    // 決定ログ Q-5: タグが 1 つも付いていない(未設定)文書だけ
+    public bool UntaggedOnly { get; init; }
 
     public IReadOnlyList<FieldCondition> FieldConditions { get; init; } = [];
 
@@ -65,6 +71,11 @@ public sealed record SearchQuery
 
     // 決定ログ N-5: 初期状態は最新版だけ
     public bool IncludeOldVersions { get; init; }
+
+    // 決定ログ S-6: 保存先での絞り込み。FilterByStorage が false なら「すべて」。StorageId は null がメイン、文字列がサブの ID
+    public bool FilterByStorage { get; init; }
+
+    public string? StorageId { get; init; }
 
     public SortKey Sort { get; init; } = SortKey.Registered;
 

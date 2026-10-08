@@ -11,9 +11,9 @@
                  WindowBackdropType="Mica"
                  WindowCornerPreference="Round">
     <StackPanel>
-        <ui:TitleBar Title="新しいライブラリを作る" ShowMinimize="False" ShowMaximize="False" />
+        <ui:TitleBar x:Name="TitleBarControl" Title="新しいライブラリを作る" ShowMinimize="False" ShowMaximize="False" />
         <StackPanel Margin="24,8,24,24">
-            <ui:TextBlock Text="ライブラリ名" FontTypography="BodyStrong" Margin="0,0,0,8" />
+            <ui:TextBlock x:Name="NameLabel" Text="ライブラリ名" FontTypography="BodyStrong" Margin="0,0,0,8" />
             <ui:TextBox x:Name="NameBox" AutomationProperties.Name="ライブラリ名" PlaceholderText="例:PDF管理" TextChanged="OnInputChanged" />
 
             <ui:TextBlock Text="作成する場所" FontTypography="BodyStrong" Margin="0,20,0,8" />
@@ -21,7 +21,7 @@
                 <ui:Button DockPanel.Dock="Right" Content="参照..." Icon="{ui:SymbolIcon FolderOpen24}" Click="OnBrowseClick" Margin="8,0,0,0" />
                 <ui:TextBox x:Name="ParentBox" AutomationProperties.Name="作成する場所" PlaceholderText="フォルダを選んでください" TextChanged="OnInputChanged" />
             </DockPanel>
-            <ui:TextBlock Text="選んだフォルダの中に「PdfManager」フォルダが作られ、PDF やデータはすべてその中に保存されます。"
+            <ui:TextBlock x:Name="HintText" Text="選んだフォルダの中に「PdfManager」フォルダが作られ、PDF やデータはすべてその中に保存されます。"
                           TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
 
             <Border Margin="0,16,0,0" Padding="12" CornerRadius="6"

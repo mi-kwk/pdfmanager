@@ -12,7 +12,8 @@ public sealed record ViewPreferences(string Sort = "Registered", long? SortField
     public static ViewPreferences Default { get; } = new();
 }
 
-public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<RecentLibrary> RecentLibraries, ViewPreferences? View = null)
+// ShowRegisterAll: 取り込み画面に「すべて登録」ボタンも表示する(決定ログ R-5、U-17②。初めはオフ)
+public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<RecentLibrary> RecentLibraries, ViewPreferences? View = null, bool ShowRegisterAll = false)
 {
     public static AppSettings Empty { get; } = new(null, []);
 }

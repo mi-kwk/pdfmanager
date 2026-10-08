@@ -37,21 +37,22 @@ await PdfPageRenderer.RenderFirstPageToJpegAsync(templatePdf, templateThumb);
 
 using var connection = PdfManagerDatabase.Open(library.DataFolder.DatabasePath);
 var catalog = new CatalogRepository(connection);
-var area = catalog.AddField("エリア", FieldType.Select);
+// エリア(順位 1、項目)とマネージャー(順位 2、エリアに紐づく)のタググループ(決定ログ R-11)
+var areaGroup = catalog.AddGroup("エリア", 1);
+catalog.SetGroupPinned(areaGroup, true);
+var managerGroup = catalog.AddGroup("マネージャー", 2);
 string[] areas = ["上野エリア", "秋葉原エリア", "新宿エリア", "渋谷エリア", "池袋エリア", "品川エリア"];
-var areaOptions = areas.Select(a => catalog.AddOption(area, a)).ToArray();
+var areaTags = areas.Select(a => catalog.AddTag(a, areaGroup)).ToArray();
 var month = catalog.AddField("年月", FieldType.YearMonth);
 var amount = catalog.AddField("金額", FieldType.Number);
 var store = catalog.AddField("店舗", FieldType.Text);
 
 var managers = Enumerable.Range(1, 30).Select(i =>
 {
-    var id = catalog.AddTag($"担当{i:00}マネージャー");
-    catalog.SetTagAttributes(id, [areaOptions[i % areaOptions.Length]]);
-    return id;
+    return catalog.AddTag($"担当{i:00}マネージャー", managerGroup, [areaTags[i % areaTags.Length]]);
 }).ToArray();
 string[] otherTagNames = ["IODATA", "要確認", "重要", "繁盛エリア", "蕎麦屋", "ラーメン", "カフェ", "物販", "保管期限あり", "社外秘"];
-var otherTags = otherTagNames.Select(catalog.AddTag).ToArray();
+var otherTags = otherTagNames.Select(n => catalog.AddTag(n)).ToArray();
 
 string[] kinds = ["売上報告", "月次報告", "稟議書", "取扱説明書", "仕様書", "議事録", "見積書", "請求書"];
 var repository = new DocumentRepository(connection);
@@ -65,14 +66,13 @@ for (var i = 0; i < count; i++)
     var title = $"{areas[areaIndex].Replace("エリア", "")}{random.Next(1, 40)}号店 {kind} {created:yyyy年M月}";
     var fileName = $"{kind}-{i:000000}.pdf";
 
-    var tags = new HashSet<long> { managers[random.Next(managers.Length)] };
+    var tags = new HashSet<long> { areaTags[areaIndex], managers[random.Next(managers.Length)] };
     for (var t = random.Next(3); t > 0; t--)
     {
         tags.Add(otherTags[random.Next(otherTags.Length)]);
     }
     var values = new Dictionary<long, FieldValue>
     {
-        [area] = new(areas[areaIndex], null, null),
         [month] = new(null, null, $"{created:yyyy-MM}-01"),
         [store] = new($"{random.Next(1, 40)}号店", null, null),
     };

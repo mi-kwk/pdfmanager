@@ -30,19 +30,41 @@ public partial class ImportViewModel : ObservableObject, IDisposable
 
     private readonly DocumentDetail? _newVersionOf;
 
-    // newVersionOf を渡すと、その文書の新しい版として 1 件だけ登録する(決定ログ N-1①、N-2)
-    public ImportViewModel(DataFolder dataFolder, IUserDialogs dialogs, IEnumerable<string> paths, DocumentDetail? newVersionOf = null)
+    // newVersionOf を渡すと、その文書の新しい版として 1 件だけ登録する(決定ログ N-1①、N-2)。
+    // showRegisterAll は「すべて登録」ボタンを表示するか(設定画面で切り替える、決定ログ R-5)
+    public ImportViewModel(DataFolder dataFolder, IUserDialogs dialogs, IEnumerable<string> paths, DocumentDetail? newVersionOf = null, bool showRegisterAll = false)
     {
         _newVersionOf = newVersionOf;
         _dataFolder = dataFolder;
         _service = new ImportService(dataFolder);
         _dialogs = dialogs;
-        Editor = new DocumentEditor(dialogs, showRatingAndMemo: false) { OtherDocuments = () => Items.Where(i => i.IsReady) };
+        ShowRegisterAll = showRegisterAll;
+        Editor = new DocumentEditor(dialogs, showRatingAndMemo: false) { OtherDocuments = () => Items.Where(i => i.IsRegistrable) };
         Directory.CreateDirectory(_previewFolder);
         _lastInput = LastImportInput.Load(dataFolder);
-        Items.CollectionChanged += (_, _) => NotifyCounts();
+        Items.CollectionChanged += (_, e) =>
+        {
+            foreach (var item in e.NewItems?.OfType<ImportItem>() ?? [])
+            {
+                item.PropertyChanged += OnItemChanged;
+            }
+            NotifyCounts();
+        };
         LoadCatalog();
         AddFiles(paths);
+    }
+
+    // 「取り込まない」を切り替えたとき(決定ログ R-4)
+    private void OnItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ImportItem.IsExcluded))
+        {
+            NotifyCounts();
+            if (sender is ImportItem item && _selection.Contains(item))
+            {
+                LoadSelection();
+            }
+        }
     }
 
     public DocumentEditor Editor { get; }
@@ -57,13 +79,20 @@ public partial class ImportViewModel : ObservableObject, IDisposable
 
     public string? NewVersionText => _newVersionOf is null ? null : $"「{_newVersionOf.Title}」の新しい版として登録します。前の版のタイトル・ファイル名の作り方・項目・タグ・メモを引き継いでいます(変更できます)。";
 
-    public int ReadyCount => Items.Count(i => i.IsReady);
+    public bool ShowRegisterAll { get; }
 
-    public string RegisterText => $"登録({ReadyCount} 件)";
+    // 登録の対象になる件数(「取り込まない」の印が付いたものは除く)
+    public int ReadyCount => Items.Count(i => i.IsRegistrable);
+
+    public int SelectedReadyCount => _selection.Count(i => i.IsRegistrable);
+
+    public string RegisterAllText => $"すべて登録({ReadyCount} 件)";
+
+    public string RegisterSelectedText => $"選択中を登録({SelectedReadyCount} 件)";
 
     public string ListHeader => $"取り込み待ち({Items.Count} 件)";
 
-    private List<ImportItem> Editable => _selection.Where(i => i.IsReady).ToList();
+    private List<ImportItem> Editable => _selection.Where(i => i.IsRegistrable).ToList();
 
     public bool HasEditableSelection => Editable.Count > 0;
 
@@ -81,7 +110,7 @@ public partial class ImportViewModel : ObservableObject, IDisposable
     public partial bool DeleteOriginals { get; set; }
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(RegisterCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RegisterSelectedCommand), nameof(RegisterAllCommand))]
     public partial bool IsRegistering { get; set; }
 
     [ObservableProperty]
@@ -217,6 +246,7 @@ public partial class ImportViewModel : ObservableObject, IDisposable
         Editor.SetTargets(Editable);
         OnPropertyChanged(nameof(HasEditableSelection));
         OnPropertyChanged(nameof(SelectionText));
+        NotifyCounts();
     }
 
     private static void CopyFromPreviousVersion(ImportItem item, DetailItem previous)
@@ -254,7 +284,7 @@ public partial class ImportViewModel : ObservableObject, IDisposable
             item.TagKeys.Clear();
             foreach (var name in _lastInput.TagNames)
             {
-                item.TagKeys.Add(Editor.EnsureTagKnown(name, []));
+                item.TagKeys.Add(Editor.EnsureTagKnown(name));
             }
             item.Prefix = _lastInput.Prefix;
         }
@@ -263,17 +293,26 @@ public partial class ImportViewModel : ObservableObject, IDisposable
 
     // ==== 登録 ====
 
-    private bool CanRegister() => !IsRegistering;
+    private bool CanRegisterSelected() => !IsRegistering && SelectedReadyCount > 0;
 
-    [RelayCommand(CanExecute = nameof(CanRegister))]
-    private async Task RegisterAsync()
+    private bool CanRegisterAll() => !IsRegistering && ReadyCount > 0;
+
+    // 決定ログ R-5: 選んでいる PDF だけを登録し、次の PDF を選ぶ(1 件ずつ入力して登録できるように)
+    [RelayCommand(CanExecute = nameof(CanRegisterSelected))]
+    private Task RegisterSelectedAsync() => RegisterAsync(Items.Where(i => _selection.Contains(i) && i.IsRegistrable).ToList());
+
+    [RelayCommand(CanExecute = nameof(CanRegisterAll))]
+    private Task RegisterAllAsync() => RegisterAsync(Items.Where(i => i.IsRegistrable).ToList());
+
+    private async Task RegisterAsync(List<ImportItem> targets)
     {
-        var targets = Items.Where(i => i.IsReady).ToList();
         if (targets.Count == 0)
         {
             ShowResult(InfoBarSeverity.Warning, "登録できる PDF がありません", "準備完了の PDF がありません。");
             return;
         }
+        // 登録したものは一覧から消えるので、その位置にある次の PDF を選ぶ
+        var nextIndex = Items.IndexOf(targets[0]);
 
         var parsedValues = new Dictionary<EditableDocument, Dictionary<long, FieldValue>>();
         var fieldErrors = Editor.ParseFieldValues(targets, parsedValues);
@@ -358,7 +397,9 @@ public partial class ImportViewModel : ObservableObject, IDisposable
                 SaveLastInput(lastWithInput);
             }
             LoadCatalog();
-            PrimarySelection = Items.FirstOrDefault();
+            PrimarySelection = Items.Skip(nextIndex).FirstOrDefault(i => i.IsRegistrable)
+                ?? Items.FirstOrDefault(i => i.IsRegistrable)
+                ?? Items.FirstOrDefault();
             if (PrimarySelection is null)
             {
                 SetSelection([]);
@@ -414,15 +455,19 @@ public partial class ImportViewModel : ObservableObject, IDisposable
     {
         using var connection = PdfManagerDatabase.Open(_dataFolder.DatabasePath);
         var catalog = new CatalogRepository(connection);
-        _fields = catalog.GetFields();
-        Editor.SetCatalog(_fields, catalog.GetTags(), new DocumentRepository(connection).GetFileNames());
+        _fields = catalog.GetFields().Where(f => f.Type != FieldType.Select).ToList();
+        Editor.SetCatalog(_fields, catalog.GetGroups(), catalog.GetTags(), new DocumentRepository(connection).GetFileNames());
     }
 
     private void NotifyCounts()
     {
         OnPropertyChanged(nameof(ReadyCount));
-        OnPropertyChanged(nameof(RegisterText));
+        OnPropertyChanged(nameof(SelectedReadyCount));
+        OnPropertyChanged(nameof(RegisterAllText));
+        OnPropertyChanged(nameof(RegisterSelectedText));
         OnPropertyChanged(nameof(ListHeader));
+        RegisterSelectedCommand.NotifyCanExecuteChanged();
+        RegisterAllCommand.NotifyCanExecuteChanged();
     }
 
     private void ShowResult(InfoBarSeverity severity, string title, string message)

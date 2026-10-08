@@ -76,6 +76,15 @@ public sealed class LibraryActions(AppSettingsStore store)
         store.Save(Settings);
     }
 
+    // 決定ログ R-5: 取り込み画面の「すべて登録」ボタン
+    public bool ShowRegisterAll => Settings.ShowRegisterAll;
+
+    public void SetShowRegisterAll(bool value)
+    {
+        Settings = Settings with { ShowRegisterAll = value };
+        store.Save(Settings);
+    }
+
     public void Forget(string libraryFilePath)
     {
         Settings = AppSettingsStore.Forget(Settings, libraryFilePath);

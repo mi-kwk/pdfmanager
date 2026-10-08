@@ -6,6 +6,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:vm="clr-namespace:PdfManager.App.ViewModels"
              xmlns:conv="clr-namespace:PdfManager.App.Converters"
+             xmlns:views="clr-namespace:PdfManager.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:DocumentEditor}">
 
@@ -94,8 +95,9 @@
             <ui:TextBlock Text="同じ星をもう一度押すと未評価に戻ります。" Style="{StaticResource Hint}" />
         </StackPanel>
 
-        <ui:TextBlock Text="項目" Style="{StaticResource SectionTitle}" />
-        <ui:TextBlock Text="項目がありません。メイン画面の「項目・タグ」で作れます。">
+        <!-- 補助項目(年月・日付・数値・文字、決定ログ Q-6) -->
+        <ui:TextBlock Text="補助項目" Style="{StaticResource SectionTitle}" />
+        <ui:TextBlock Text="補助項目がありません(年月などを入れたいときは、メイン画面の「項目・タグ」で作れます)。">
             <ui:TextBlock.Style>
                 <Style TargetType="ui:TextBlock" BasedOn="{StaticResource Hint}">
                     <Setter Property="Visibility" Value="Collapsed" />
@@ -135,48 +137,30 @@
         </ItemsControl>
 
         <ui:TextBlock Text="タグ" Style="{StaticResource SectionTitle}" />
-        <DockPanel Margin="0,0,0,6">
-            <ui:Button DockPanel.Dock="Right" Content="追加" Icon="{ui:SymbolIcon Add24}" Margin="8,0,0,0"
-                       Command="{Binding AddTagFromSearchCommand}" AutomationProperties.Name="タグを追加" />
-            <ui:TextBox Text="{Binding TagSearch, UpdateSourceTrigger=PropertyChanged}" Icon="{ui:SymbolIcon Search24}"
-                        PlaceholderText="タグ名・属性で検索(Enter で新しいタグを追加)" AutomationProperties.Name="タグの検索">
-                <ui:TextBox.InputBindings>
-                    <KeyBinding Key="Enter" Command="{Binding AddTagFromSearchCommand}" />
-                </ui:TextBox.InputBindings>
-            </ui:TextBox>
-        </DockPanel>
-        <DockPanel Margin="0,0,0,6">
-            <CheckBox DockPanel.Dock="Right" Content="すべてのタグを表示" IsChecked="{Binding ShowAllTags}" Margin="12,0,0,0"
-                      AutomationProperties.Name="すべてのタグを表示" />
-            <ComboBox ItemsSource="{Binding AttributeFilters}" DisplayMemberPath="Label"
-                      SelectedItem="{Binding SelectedAttributeFilter}" AutomationProperties.Name="属性で絞り込み" />
-        </DockPanel>
-        <ui:TextBlock Text="{Binding TagFilterHint}" Style="{StaticResource Hint}" Margin="0,0,0,4" />
-        <ItemsControl ItemsSource="{Binding TagChoices}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <!-- 一部の PDF にだけ付いているタグは薄く表示する(決定ログ F-7) -->
-                    <Border>
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsPartial}" Value="True">
-                                        <Setter Property="Opacity" Value="0.55" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,0,2" AutomationProperties.Name="{Binding Name}">
-                            <StackPanel>
-                                <ui:TextBlock Text="{Binding Label}" />
-                                <ui:TextBlock Text="{Binding AttributeText}" FontSize="12"
-                                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                        </CheckBox>
-                    </Border>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <!-- 取り込み画面:タググループごとの欄でその場で選ぶ(決定ログ R-11 ②) -->
+        <views:TagSectionsView Visibility="{Binding ShowTagSections, Converter={StaticResource BoolToVisibility}}" />
+        <!-- 詳細エリア:付いているタグだけを表示し、「タグ設定」で別画面を開く(決定ログ R-11 ④) -->
+        <StackPanel Visibility="{Binding ShowTagSections, Converter={StaticResource InverseBoolToVisibility}}">
+            <ItemsControl ItemsSource="{Binding AssignedTags}" AutomationProperties.Name="付いているタグ">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBlock Text="{Binding GroupName}" TextTrimming="CharacterEllipsis"
+                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <ui:TextBlock Grid.Column="1" Text="{Binding TagsText}" TextWrapping="Wrap" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <ui:TextBlock Text="未設定(タグは付いていません)" Style="{StaticResource Hint}"
+                          Visibility="{Binding HasAssignedTags, Converter={StaticResource InverseBoolToVisibility}}" />
+            <ui:Button Content="タグ設定" Icon="{ui:SymbolIcon Tag24}" Margin="0,8,0,0" Command="{Binding OpenTagSettingCommand}"
+                       AutomationProperties.Name="タグ設定" ToolTip="タグを付ける・外す画面を開きます" />
+        </StackPanel>
 
         <!-- メモ(詳細エリアのみ) -->
         <StackPanel Visibility="{Binding ShowRatingAndMemo, Converter={StaticResource BoolToVisibility}}">

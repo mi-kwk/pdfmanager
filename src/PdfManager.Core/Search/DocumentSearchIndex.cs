@@ -25,6 +25,9 @@ public sealed record DocumentEntry(
 
     public IReadOnlyDictionary<long, FieldValue> RawFieldValues { get; init; } = new Dictionary<long, FieldValue>();
 
+    // 補助項目 ID → 画面に表示する形の値(年月は 2026-10)。値での絞り込みに使う(決定ログ Q-6)
+    public IReadOnlyDictionary<long, string> FormattedFieldValues { get; init; } = new Dictionary<long, string>();
+
     // 版管理(決定ログ N-4、N-5)
     public string? SeriesId { get; init; }
 
@@ -35,6 +38,9 @@ public sealed record DocumentEntry(
     public bool IsLatest { get; init; } = true;
 
     public string VersionText => SeriesId is null ? "" : VersionNames.Format(VersionNo, VersionLabel) + (IsLatest ? "" : "・旧版");
+
+    // 保存先(決定ログ S-4、S-6)。null がメイン、文字列がサブライブラリの ID
+    public string? StorageId { get; init; }
 }
 
 // 検索(docs/04「検索」、決定ログ I-1〜I-6、L-1〜L-5)。件数が数万件でも一瞬で探せるよう、検索用の文字と条件に使う値をメモリに持つ
@@ -76,7 +82,8 @@ public sealed class DocumentSearchIndex
             """
             SELECT d.id, d.title, d.file_name, d.created_at, d.page_count, d.memo, d.rating, d.view_count, d.last_viewed_at,
                    d.series_id, d.version_no, d.version_label,
-                   d.series_id IS NULL OR d.version_no = (SELECT MAX(version_no) FROM documents s WHERE s.series_id = d.series_id)
+                   d.series_id IS NULL OR d.version_no = (SELECT MAX(version_no) FROM documents s WHERE s.series_id = d.series_id),
+                   d.archive_volume_id
             FROM documents d ORDER BY d.created_at DESC, d.id;
             """,
             r =>
@@ -96,10 +103,12 @@ public sealed class DocumentSearchIndex
                     ViewCount = r.GetInt64(7),
                     LastViewedAt = r.IsDBNull(8) ? null : DateTimeOffset.Parse(r.GetString(8), CultureInfo.InvariantCulture),
                     RawFieldValues = documentFields.ToDictionary(f => f.FieldId, f => f.Value),
+                    FormattedFieldValues = documentFields.ToDictionary(f => f.FieldId, f => FieldValues.Format(f.Type, f.Value)),
                     SeriesId = r.IsDBNull(9) ? null : r.GetString(9),
                     VersionNo = r.IsDBNull(10) ? 0 : r.GetInt32(10),
                     VersionLabel = r.GetString(11),
                     IsLatest = r.GetBoolean(12),
+                    StorageId = r.IsDBNull(13) ? null : r.GetString(13),
                 };
                 // 決定ログ I-2・J-6: タイトル・タグ名・ファイル名・項目の値・メモを対象にする
                 var text = Normalize(string.Join('\n',
@@ -119,9 +128,15 @@ public sealed class DocumentSearchIndex
         var matches = _entries
             .Where(e => terms.All(t => e.Text.Contains(t, StringComparison.Ordinal)))
             .Select(e => e.Entry)
-            .Where(e => (e.IsLatest || query.IncludeOldVersions) && MatchesTags(e, query) && MatchesFields(e, query.FieldConditions) && MatchesRatingAndDates(e, query));
+            .Where(e => (e.IsLatest || query.IncludeOldVersions) && (!query.FilterByStorage || e.StorageId == query.StorageId)
+                        && MatchesTags(e, query) && MatchesFields(e, query.FieldConditions) && MatchesRatingAndDates(e, query));
         return Sort(matches, query).ToList();
     }
+
+    // 決定ログ S-6: 保存先ごとの件数。キーは "" がメイン、それ以外はサブの ID
+    public static IReadOnlyDictionary<string, int> CountStorages(IEnumerable<DocumentEntry> results) => results
+        .GroupBy(e => e.StorageId ?? "")
+        .ToDictionary(g => g.Key, g => g.Count());
 
     // 決定ログ L-3: 今の結果の中での件数
     public static IReadOnlyDictionary<long, int> CountTags(IEnumerable<DocumentEntry> results) => results
@@ -135,8 +150,37 @@ public sealed class DocumentSearchIndex
         .GroupBy(v => v)
         .ToDictionary(g => g.Key, g => g.Count());
 
+    // 補助項目の値(表示する形)ごとの件数
+    public static IReadOnlyDictionary<string, int> CountFieldValues(IEnumerable<DocumentEntry> results, long fieldId) => results
+        .Select(e => e.FormattedFieldValues.GetValueOrDefault(fieldId))
+        .OfType<string>()
+        .GroupBy(v => v)
+        .ToDictionary(g => g.Key, g => g.Count());
+
+    // 決定ログ Q-5: タグが 1 つも付いていない(未設定)文書の数
+    public static int CountUntagged(IEnumerable<DocumentEntry> results) => results.Count(e => e.TagIds.Count == 0);
+
+    // 補助項目に入っている値(表示する形)の一覧。年月・日付・数値は新しい・大きい順、文字は五十音順
+    public IReadOnlyList<string> DistinctFieldValues(long fieldId)
+    {
+        var values = _entries.Select(e => e.Entry)
+            .Where(e => e.RawFieldValues.ContainsKey(fieldId))
+            .Select(e => (Display: e.FormattedFieldValues[fieldId], Raw: e.RawFieldValues[fieldId]))
+            .DistinctBy(v => v.Display)
+            .ToList();
+        return values.Any(v => v.Raw.Number is not null)
+            ? values.OrderByDescending(v => v.Raw.Number).Select(v => v.Display).ToList()
+            : values.Any(v => v.Raw.Date is not null)
+                ? values.OrderByDescending(v => v.Raw.Date, StringComparer.Ordinal).Select(v => v.Display).ToList()
+                : values.Select(v => v.Display).Order(TitleComparer).ToList();
+    }
+
     private static bool MatchesTags(DocumentEntry entry, SearchQuery query)
     {
+        if (query.UntaggedOnly && entry.TagIds.Count > 0)
+        {
+            return false;
+        }
         if (query.ExcludedTagIds.Any(entry.TagIds.Contains))
         {
             return false;
@@ -173,6 +217,10 @@ public sealed class DocumentSearchIndex
                 return false;
             }
             if (condition.AnyOf is { Count: > 0 } anyOf && (value.Text is null || !anyOf.Contains(value.Text)))
+            {
+                return false;
+            }
+            if (condition.AnyOfDisplay is { Count: > 0 } anyOfDisplay && !anyOfDisplay.Contains(entry.FormattedFieldValues[condition.FieldId]))
             {
                 return false;
             }

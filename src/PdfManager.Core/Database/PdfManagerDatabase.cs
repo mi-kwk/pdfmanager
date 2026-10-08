@@ -4,7 +4,19 @@ namespace PdfManager.Core.Database;
 
 public static class PdfManagerDatabase
 {
-    public const int SchemaVersion = 5;
+    public const int SchemaVersion = 7;
+
+    // SQLite 本体は Windows の winsqlite3.dll(決定ログ R-9)。RETURNING を使うため 3.35 以上が必要
+    public static readonly Version MinimumSqliteVersion = new(3, 35, 0);
+
+    public static Version GetSqliteVersion()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT sqlite_version();";
+        return Version.Parse((string)command.ExecuteScalar()!);
+    }
 
     public static SqliteConnection Open(string databasePath)
     {
@@ -20,9 +32,10 @@ public static class PdfManagerDatabase
         return connection;
     }
 
-    public static void Initialize(SqliteConnection connection)
+    // サブライブラリは外付け HDD などにあり、取り外したときに -wal ファイルが残らないよう WAL を使わない
+    public static void Initialize(SqliteConnection connection, bool useWal = true)
     {
-        Execute(connection, "PRAGMA journal_mode = WAL;");
+        Execute(connection, useWal ? "PRAGMA journal_mode = WAL;" : "PRAGMA journal_mode = DELETE;");
 
         var version = GetUserVersion(connection);
         if (version >= SchemaVersion)
@@ -50,6 +63,14 @@ public static class PdfManagerDatabase
         if (version < 5)
         {
             Execute(connection, Schema.V5, transaction);
+        }
+        if (version < 6)
+        {
+            Execute(connection, Schema.V6, transaction);
+        }
+        if (version < 7)
+        {
+            Schema.MigrateToV7(connection, transaction);
         }
         Execute(connection, $"PRAGMA user_version = {SchemaVersion};", transaction);
         transaction.Commit();

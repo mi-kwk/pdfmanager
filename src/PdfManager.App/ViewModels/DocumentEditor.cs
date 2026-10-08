@@ -25,24 +25,35 @@ public sealed partial class StarItem(int value, Action<int> onClick) : Observabl
 public partial class DocumentEditor : ObservableObject
 {
     private readonly IUserDialogs _dialogs;
-    // 保存・登録前の新しいタグ。キーは正規化した名前、値は表示名と付ける属性(決定ログ D-4)
-    private readonly Dictionary<string, (string Name, IReadOnlyList<long> AttributeOptionIds)> _pendingTags = [];
+    // 保存・登録前の新しいタグ。キーは正規化した名前(決定ログ Q-12)
+    private readonly Dictionary<string, PendingTag> _pendingTags = [];
     private IReadOnlyList<FieldDefinition> _fields = [];
+    private Dictionary<long, TagGroup> _groups = [];
     private Dictionary<string, TagSummary> _tags = [];
+    private Dictionary<long, string> _tagKeysById = [];
     private HashSet<string> _existingFileNames = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<EditableDocument> _targets = [];
     private bool _loading;
 
-    public DocumentEditor(IUserDialogs dialogs, bool showRatingAndMemo)
+    // showTagSections が false なら、付いているタグだけを表示し、「タグ設定」で別画面を開く(詳細エリア、決定ログ R-11 ④)
+    public DocumentEditor(IUserDialogs dialogs, bool showRatingAndMemo, bool showTagSections = true)
     {
         _dialogs = dialogs;
         ShowRatingAndMemo = showRatingAndMemo;
+        ShowTagSections = showTagSections;
         Stars = Enumerable.Range(1, 5).Select(i => new StarItem(i, OnStarClicked)).ToList();
-        SelectedAttributeFilter = AttributeFilterOption.All;
     }
+
+    private sealed record PendingTag(string Name, long? GroupId, IReadOnlyList<string> ParentKeys);
+
+    // タグ 1 つ分の情報(登録済みと、まだ登録していない新しいタグをまとめて扱う)
+    private sealed record TagInfo(string Key, string Name, long? GroupId, IReadOnlyList<string> ParentKeys, bool IsNew);
 
     // 利用者が入力欄を変えたとき(詳細エリアの「保存していない変更」の判定に使う)
     public event Action? Edited;
+
+    // 詳細エリアの「タグ設定」が押されたとき
+    public event Action? TagSettingRequested;
 
     // 同じファイル名の警告で、対象以外に比べる文書(取り込み画面では一覧の他の PDF)
     public Func<IEnumerable<EditableDocument>> OtherDocuments { get; set; } = () => [];
@@ -96,23 +107,17 @@ public partial class DocumentEditor : ObservableObject
     [ObservableProperty]
     public partial bool CanRebuildFileName { get; set; }
 
-    [ObservableProperty]
-    public partial string TagSearch { get; set; } = "";
+    public bool ShowTagSections { get; }
 
-    [ObservableProperty]
-    public partial IReadOnlyList<AttributeFilterOption> AttributeFilters { get; set; } = [];
+    // 決定ログ R-11 ②: タググループごとの欄(順位 1・独立 → 順位 2〜5 → 自由タグ)
+    public ObservableCollection<TagSection> TagSections { get; } = [];
 
+    // 決定ログ R-11 ④: 付いているタグ(詳細エリアの表示用)
     [ObservableProperty]
-    public partial AttributeFilterOption SelectedAttributeFilter { get; set; }
+    [NotifyPropertyChangedFor(nameof(HasAssignedTags))]
+    public partial IReadOnlyList<AssignedTagLine> AssignedTags { get; set; } = [];
 
-    [ObservableProperty]
-    public partial bool ShowAllTags { get; set; }
-
-    [ObservableProperty]
-    public partial IReadOnlyList<TagChoice> TagChoices { get; set; } = [];
-
-    [ObservableProperty]
-    public partial string TagFilterHint { get; set; } = "";
+    public bool HasAssignedTags => AssignedTags.Count > 0;
 
     [ObservableProperty]
     public partial bool IsRatingMixed { get; set; }
@@ -128,15 +133,18 @@ public partial class DocumentEditor : ObservableObject
 
     // ==== 対象と項目・タグの定義 ====
 
-    public void SetCatalog(IReadOnlyList<FieldDefinition> fields, IReadOnlyList<TagSummary> tags, HashSet<string> existingFileNames)
+    // fields は補助項目(年月・日付・数値・文字、決定ログ Q-6)
+    public void SetCatalog(IReadOnlyList<FieldDefinition> fields, IReadOnlyList<TagGroup> groups, IReadOnlyList<TagSummary> tags, HashSet<string> existingFileNames)
     {
         _tags = tags.ToDictionary(t => NameNormalizer.Normalize(t.Name));
+        _tagKeysById = tags.ToDictionary(t => t.Id, t => NameNormalizer.Normalize(t.Name));
         foreach (var key in _pendingTags.Keys.Where(_tags.ContainsKey).ToList())
         {
             _pendingTags.Remove(key);
         }
         _existingFileNames = existingFileNames;
 
+        fields = fields.Where(f => f.Type != FieldType.Select).ToList();
         if (!fields.Select(f => (f.Id, f.Type)).SequenceEqual(_fields.Select(f => (f.Id, f.Type))))
         {
             FieldEditors.Clear();
@@ -146,10 +154,20 @@ public partial class DocumentEditor : ObservableObject
             }
         }
         _fields = fields;
-        AttributeFilters = [AttributeFilterOption.All, .. fields
-            .Where(f => f.Type == FieldType.Select)
-            .SelectMany(f => f.Options.Select(o => new AttributeFilterOption(o.Id, $"{f.Name}:{o.Value}")))];
-        SelectedAttributeFilter = AttributeFilters.FirstOrDefault(a => a.OptionId == SelectedAttributeFilter?.OptionId) ?? AttributeFilterOption.All;
+
+        // 順位 1 と独立を先に、順位 2〜5 をその後に(同じ順位の中は管理画面での並び順)、最後に自由タグ
+        var ordered = groups.OrderBy(g => g.DisplayRank).ToList();
+        if (!ordered.Select(g => (g.Id, g.Name, g.Rank)).SequenceEqual(TagSections.Where(s => s.Group is not null).Select(s => (s.Group!.Id, s.Group.Name, s.Group.Rank))))
+        {
+            TagSections.Clear();
+            foreach (var group in ordered)
+            {
+                TagSections.Add(new TagSection(group, () => RefreshTagChoices(), OnSectionEnterAsync));
+            }
+            TagSections.Add(new TagSection(null, () => RefreshTagChoices(), OnSectionEnterAsync));
+        }
+        _groups = groups.ToDictionary(g => g.Id);
+        RefreshTagChoices();
     }
 
     public void SetTargets(IReadOnlyList<EditableDocument> targets)
@@ -308,26 +326,42 @@ public partial class DocumentEditor : ObservableObject
                 item.FieldInputs[editor.Field.Id] = editor.Text;
             }
         }
-        if (editor.IsSelect)
-        {
-            RefreshTagChoices();
-        }
         UpdateFileNamePreview();
         Edited?.Invoke();
     }
 
-    // ==== タグ ====
-
-    partial void OnTagSearchChanged(string value) => RefreshTagChoices();
-
-    partial void OnSelectedAttributeFilterChanged(AttributeFilterOption value) => RefreshTagChoices();
-
-    partial void OnShowAllTagsChanged(bool value) => RefreshTagChoices();
+    // ==== タグ(決定ログ R-11 ②、Q-3・Q-8・Q-9・Q-12) ====
 
     [RelayCommand]
-    private async Task AddTagFromSearchAsync()
+    private void OpenTagSetting() => TagSettingRequested?.Invoke();
+
+    // 「前回と同じ」などで名前から付けるタグ。知らない名前なら自由タグとして新しく作る
+    public string EnsureTagKnown(string name)
     {
-        var name = NameNormalizer.Clean(TagSearch);
+        var key = NameNormalizer.Normalize(name);
+        if (!_tags.ContainsKey(key) && !_pendingTags.ContainsKey(key))
+        {
+            _pendingTags[key] = new PendingTag(NameNormalizer.Clean(name), null, []);
+        }
+        return key;
+    }
+
+    private IEnumerable<TagInfo> AllTags() => _tags.Values
+        .Select(t => new TagInfo(NameNormalizer.Normalize(t.Name), t.Name, t.GroupId,
+            t.ParentIds.Select(id => _tagKeysById.GetValueOrDefault(id)).OfType<string>().ToList(), false))
+        .Concat(_pendingTags.Select(p => new TagInfo(p.Key, p.Value.Name, p.Value.GroupId, p.Value.ParentKeys, true)));
+
+    private int? RankOf(long? groupId) => groupId is { } id && _groups.TryGetValue(id, out var group) ? group.Rank : null;
+
+    // 対象のどれかに付いている、指定した順位のタグ(紐づくタグを表示するための親)
+    private HashSet<string> CheckedKeysOfRank(int rank) => AllTags()
+        .Where(t => RankOf(t.GroupId) == rank && _targets.Any(i => i.TagKeys.Contains(t.Key)))
+        .Select(t => t.Key)
+        .ToHashSet();
+
+    private async Task OnSectionEnterAsync(TagSection section)
+    {
+        var name = NameNormalizer.Clean(section.Search);
         if (name.Length == 0 || _targets.Count == 0)
         {
             return;
@@ -337,22 +371,30 @@ public partial class DocumentEditor : ObservableObject
             await _dialogs.ShowErrorAsync($"タグ名は {CatalogRepository.MaxNameLength} 文字以内で入力してください。");
             return;
         }
-        var key = EnsureTagKnown(name, SelectedAttributeOptionIds());
+        var key = NameNormalizer.Normalize(name);
+        var groupId = section.Group?.Id;
+        if (AllTags().FirstOrDefault(t => t.Key == key) is { } existing)
+        {
+            // 決定ログ Q-9: グループが違っても同じ名前のタグは作れない
+            if (existing.GroupId != groupId)
+            {
+                await _dialogs.ShowErrorAsync($"「{existing.Name}」は「{GroupLabel(existing.GroupId)}」にあるタグです。同じ名前のタグは 1 つしか作れません。");
+                return;
+            }
+        }
+        else
+        {
+            // 順位 2 以降なら、上の順位で選んでいるタグに紐づけて作る
+            var parents = section.Group is { Rank: >= 2 } group ? CheckedKeysOfRank(group.Rank - 1).ToList() : [];
+            _pendingTags[key] = new PendingTag(name, groupId, parents);
+        }
         ApplyEdit(i => i.TagKeys.Add(key));
-        TagSearch = "";
+        section.Search = "";
         RebuildPrefixOptions();
         RefreshTagChoices();
     }
 
-    public string EnsureTagKnown(string name, IReadOnlyList<long> attributeOptionIdsForNewTag)
-    {
-        var key = NameNormalizer.Normalize(name);
-        if (!_tags.ContainsKey(key) && !_pendingTags.ContainsKey(key))
-        {
-            _pendingTags[key] = (NameNormalizer.Clean(name), attributeOptionIdsForNewTag);
-        }
-        return key;
-    }
+    private string GroupLabel(long? groupId) => groupId is { } id && _groups.TryGetValue(id, out var group) ? group.Name : "自由タグ";
 
     private void OnTagToggled(TagChoice choice)
     {
@@ -372,58 +414,34 @@ public partial class DocumentEditor : ObservableObject
                 item.TagKeys.Remove(choice.Key);
             }
         }
+        // 押した欄はそのまま(押した直後に並びが変わらないように)、紐づくタグの欄などを更新する
+        RefreshTagChoices(keep: TagSections.FirstOrDefault(s => s.Choices.Contains(choice)));
         RebuildPrefixOptions();
         UpdateFileNamePreview();
         Edited?.Invoke();
     }
 
-    // 決定ログ D-1: 選択肢型の項目で選んでいる値(対象の全件で同じもの)
-    private List<long> SelectedAttributeOptionIds() => FieldEditors
-        .Where(e => e.IsSelect && !e.IsMixed && e.Text.Length > 0)
-        .SelectMany(e => e.Field.Options.Where(o => o.Value == e.Text).Select(o => o.Id))
-        .ToList();
-
-    private void RefreshTagChoices()
+    private void RefreshTagChoices(TagSection? keep = null)
     {
         var wasLoading = _loading;
         _loading = true;
         try
         {
-            if (_targets.Count == 0)
+            var all = AllTags().ToList();
+            var counts = all.ToDictionary(t => t.Key, t => _targets.Count(i => i.TagKeys.Contains(t.Key)));
+            foreach (var section in TagSections.Where(s => s != keep))
             {
-                TagChoices = [];
-                TagFilterHint = "";
-                return;
+                RefreshSection(section, all, counts);
             }
-
-            var attributeIds = SelectedAttributeOptionIds();
-            var search = NameNormalizer.Normalize(TagSearch);
-            // 検索欄や属性のプルダウンで探しているときは、項目の値による絞り込みとは別に探す(決定ログ G-4)
-            var byItemValue = !ShowAllTags && attributeIds.Count > 0 && search.Length == 0 && SelectedAttributeFilter.OptionId is null;
-            var candidates = _tags.Values
-                .Select(t => (Key: NameNormalizer.Normalize(t.Name), t.Name, t.AttributeText, OptionIds: t.Attributes.Select(a => a.OptionId).ToList(), IsNew: false))
-                .Concat(_pendingTags.Select(p => (p.Key, p.Value.Name, AttributeText: AttributeText(p.Value.AttributeOptionIds), OptionIds: p.Value.AttributeOptionIds.ToList(), IsNew: true)));
-
-            TagChoices = candidates
-                .Where(c =>
-                    _targets.Any(i => i.TagKeys.Contains(c.Key))
-                    || ((!byItemValue || c.OptionIds.Any(attributeIds.Contains))
-                        && (SelectedAttributeFilter.OptionId is not { } filter || c.OptionIds.Contains(filter))
-                        && (search.Length == 0 || c.Key.Contains(search, StringComparison.Ordinal)
-                            || NameNormalizer.Normalize(c.AttributeText).Contains(search, StringComparison.Ordinal))))
-                .Select(c =>
-                {
-                    var count = _targets.Count(i => i.TagKeys.Contains(c.Key));
-                    bool? state = count == 0 ? false : count == _targets.Count ? true : null;
-                    return new TagChoice(c.Key, c.Name, c.AttributeText, c.IsNew, state, OnTagToggled);
-                })
-                .OrderByDescending(c => c.IsChecked != false)
-                .ThenBy(c => c.Key, StringComparer.Ordinal)
+            AssignedTags = TagSections
+                .Select(s => (s.Title, Names: all
+                    .Where(t => t.GroupId == s.Group?.Id && counts[t.Key] > 0)
+                    .OrderBy(t => t.Key, StringComparer.Ordinal)
+                    .Select(t => counts[t.Key] == _targets.Count ? t.Name : $"{t.Name}(一部)")
+                    .ToList()))
+                .Where(x => x.Names.Count > 0)
+                .Select(x => new AssignedTagLine(x.Title, string.Join("、", x.Names)))
                 .ToList();
-
-            TagFilterHint = byItemValue
-                ? $"項目で選んだ「{AttributeText(attributeIds)}」を属性に持つタグを表示しています。"
-                : TagChoices.Count == 0 ? "タグがありません。上の欄に入力して Enter で追加できます。" : "";
         }
         finally
         {
@@ -431,10 +449,48 @@ public partial class DocumentEditor : ObservableObject
         }
     }
 
-    private string AttributeText(IEnumerable<long> optionIds) => string.Join("、", _fields
-        .SelectMany(f => f.Options)
-        .Where(o => optionIds.Contains(o.Id))
-        .Select(o => o.Value));
+    private void RefreshSection(TagSection section, List<TagInfo> all, Dictionary<string, int> counts)
+    {
+        if (_targets.Count == 0)
+        {
+            section.Choices = [];
+            section.Hint = "";
+            return;
+        }
+        var members = all.Where(t => t.GroupId == section.Group?.Id).ToList();
+        var search = NameNormalizer.Normalize(section.Search);
+        IEnumerable<TagInfo> visible;
+        if (search.Length > 0)
+        {
+            // 検索したときは、上の順位を選んでいなくても見つかる(決定ログ R-11 ②)
+            visible = members.Where(t => counts[t.Key] > 0 || t.Key.Contains(search, StringComparison.Ordinal));
+            section.Hint = members.Any(t => t.Key.Contains(search, StringComparison.Ordinal)) ? "" : $"見つかりません。Enter で「{NameNormalizer.Clean(section.Search)}」を新しく作って付けます。";
+        }
+        else if (section.Group is { Rank: >= 2 } group)
+        {
+            var parents = CheckedKeysOfRank(group.Rank - 1);
+            visible = members.Where(t => counts[t.Key] > 0 || t.ParentKeys.Any(parents.Contains));
+            section.Hint = parents.Count == 0
+                ? $"「{TagRanks.Label(group.Rank - 1)}」のタグを選ぶと、紐づくタグが表示されます。検索欄で探して付けることもできます。"
+                : visible.Any() ? "" : "選んだタグに紐づくタグはありません。検索欄で探して付けられます。";
+        }
+        else
+        {
+            visible = members;
+            section.Hint = members.Count == 0 ? "タグがありません。検索欄に入力して Enter で追加できます。" : "";
+        }
+        section.Choices = visible
+            .Select(t =>
+            {
+                var count = counts[t.Key];
+                bool? state = count == 0 ? false : count == _targets.Count ? true : null;
+                var detail = section.IsDependent ? string.Join("、", t.ParentKeys.Select(TagDisplayName)) : "";
+                return new TagChoice(t.Key, t.Name, detail, t.IsNew, state, OnTagToggled);
+            })
+            .OrderByDescending(c => c.IsChecked != false)
+            .ThenBy(c => c.Key, StringComparer.Ordinal)
+            .ToList();
+    }
 
     // ==== ファイル名 ====
 
@@ -448,7 +504,7 @@ public partial class DocumentEditor : ObservableObject
             options.AddRange(_targets.SelectMany(i => i.TagKeys).Distinct()
                 .Select(key => new PrefixOption(new FileNamePrefixChoice(FileNamePrefixChoice.TagKind, key), $"タグ:{TagDisplayName(key)}")));
             options.AddRange(_fields.Select(f => new PrefixOption(
-                new FileNamePrefixChoice(FileNamePrefixChoice.FieldKind, f.Id.ToString(CultureInfo.InvariantCulture)), $"項目:{f.Name}")));
+                new FileNamePrefixChoice(FileNamePrefixChoice.FieldKind, f.Id.ToString(CultureInfo.InvariantCulture)), $"補助項目:{f.Name}")));
 
             var current = _targets.Select(i => i.Prefix).Distinct().ToList();
             if (current is [{ } only] && options.All(o => o.Choice != only))
@@ -466,7 +522,7 @@ public partial class DocumentEditor : ObservableObject
 
     private string PrefixLabel(FileNamePrefixChoice choice) => choice.Kind == FileNamePrefixChoice.TagKind
         ? $"タグ:{TagDisplayName(choice.Key)}"
-        : $"項目:{FieldByKey(choice.Key)?.Name ?? "(削除された項目)"}";
+        : $"補助項目:{FieldByKey(choice.Key)?.Name ?? "(削除された補助項目)"}";
 
     private FieldDefinition? FieldByKey(string key) => _fields.FirstOrDefault(f => f.Id.ToString(CultureInfo.InvariantCulture) == key);
 
@@ -589,11 +645,27 @@ public partial class DocumentEditor : ObservableObject
         return errors;
     }
 
-    // 新しいタグはここで登録する(その時点で選んでいた属性付き、決定ログ D-4)
-    public Dictionary<string, long> ResolveTagIds(CatalogRepository catalog, IEnumerable<string> keys) =>
-        keys.Distinct().ToDictionary(key => key, key => _tags.TryGetValue(key, out var tag)
-            ? tag.Id
-            : catalog.GetOrCreateTag(_pendingTags[key].Name, _pendingTags[key].AttributeOptionIds));
+    // 新しいタグはここで登録する(グループと、作ったときに上で選んでいたタグへの紐づけ付き、決定ログ Q-12)。
+    // 紐づけ先も新しいタグのことがあるため、順位の小さい順に作る
+    public Dictionary<string, long> ResolveTagIds(CatalogRepository catalog, IEnumerable<string> keys)
+    {
+        var ids = new Dictionary<string, long>();
+        foreach (var key in keys.Distinct().OrderBy(k => _pendingTags.TryGetValue(k, out var p) ? RankOf(p.GroupId) ?? 0 : -1))
+        {
+            if (_tags.TryGetValue(key, out var tag))
+            {
+                ids[key] = tag.Id;
+                continue;
+            }
+            var pending = _pendingTags[key];
+            var parentIds = pending.ParentKeys
+                .Select(p => _tags.TryGetValue(p, out var parent) ? parent.Id : ids.GetValueOrDefault(p))
+                .Where(id => id != 0)
+                .ToList();
+            ids[key] = catalog.GetOrCreateTag(pending.Name, pending.GroupId, parentIds);
+        }
+        return ids;
+    }
 
     public (FileNameSource Source, long? SourceId) FileNameSourceFor(EditableDocument item, Dictionary<string, long> tagIds) => item.UseTitleAsFileName
         ? (FileNameSource.Title, null)

@@ -15,6 +15,7 @@ public partial class WelcomeWindow : FluentWindow
     public WelcomeWindow(LibraryActions libraries)
     {
         InitializeComponent();
+        WindowPlacement.KeepOnScreen(this);
         _libraries = libraries;
         _dialogs = new WpfUiDialogs(this);
         SystemThemeWatcher.Watch(this);

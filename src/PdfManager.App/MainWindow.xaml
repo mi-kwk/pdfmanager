@@ -72,6 +72,97 @@
             <Setter Property="Margin" Value="0,0,8,0" />
         </Style>
 
+        <!-- 絞り込みのタグ 1 つ分(決定ログ L-1・L-3)。項目の欄と「タグを検索」の欄で使う -->
+        <DataTemplate x:Key="TagFilterTemplate">
+            <DockPanel Margin="0,1" Background="Transparent">
+                <DockPanel.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="{Binding ExcludeMenuText}" Command="{Binding ToggleExcludeCommand}" />
+                    </ContextMenu>
+                </DockPanel.ContextMenu>
+                <DockPanel.Style>
+                    <Style TargetType="DockPanel">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsZero}" Value="True">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DockPanel.Style>
+                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat={}{0:N0}}" Margin="8,0,0,0"
+                              VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <ui:TextBlock DockPanel.Dock="Right" Text="✕ 除外" Margin="8,0,0,0" VerticalAlignment="Center"
+                              Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                              Visibility="{Binding IsExcluded, Converter={StaticResource BoolToVisibility}}" />
+                <CheckBox IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Tag.Name}">
+                    <StackPanel>
+                        <ui:TextBlock Text="{Binding Tag.Name}" TextTrimming="CharacterEllipsis" />
+                        <ui:TextBlock Text="{Binding Tag.DetailText}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                      Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </CheckBox>
+            </DockPanel>
+        </DataTemplate>
+        <!-- 項目の欄では、グループ名は見出しにあるので、2 行目は紐づけ先だけ -->
+        <DataTemplate x:Key="PinnedTagFilterTemplate">
+            <DockPanel Margin="0,1" Background="Transparent">
+                <DockPanel.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="{Binding ExcludeMenuText}" Command="{Binding ToggleExcludeCommand}" />
+                    </ContextMenu>
+                </DockPanel.ContextMenu>
+                <DockPanel.Style>
+                    <Style TargetType="DockPanel">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsZero}" Value="True">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DockPanel.Style>
+                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat={}{0:N0}}" Margin="8,0,0,0"
+                              VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <ui:TextBlock DockPanel.Dock="Right" Text="✕ 除外" Margin="8,0,0,0" VerticalAlignment="Center"
+                              Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                              Visibility="{Binding IsExcluded, Converter={StaticResource BoolToVisibility}}" />
+                <CheckBox IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Tag.Name}">
+                    <StackPanel>
+                        <ui:TextBlock Text="{Binding Tag.Name}" TextTrimming="CharacterEllipsis" />
+                        <ui:TextBlock Text="{Binding Tag.ParentText}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                      Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                      Visibility="{Binding Tag.HasParents, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </CheckBox>
+            </DockPanel>
+        </DataTemplate>
+        <!-- 補助項目の値 1 つ分(決定ログ Q-6) -->
+        <DataTemplate x:Key="OptionFilterTemplate">
+            <DockPanel Margin="0,1">
+                <DockPanel.Style>
+                    <Style TargetType="DockPanel">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsZero}" Value="True">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DockPanel.Style>
+                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat={}{0:N0}}" VerticalAlignment="Center"
+                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <CheckBox Content="{Binding Value}" IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Value}" />
+            </DockPanel>
+        </DataTemplate>
+
+        <!-- 保存先の印。つながっていないときは注意の色(決定ログ S-4) -->
+        <Style x:Key="StorageBadge" TargetType="Border">
+            <Setter Property="Background" Value="#FF6B6B6B" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOffline}" Value="True">
+                    <Setter Property="Background" Value="#FFC4511A" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- サムネイル表示(決定ログ G-5) -->
         <ItemsPanelTemplate x:Key="GridPanel">
             <ui:VirtualizingWrapPanel ItemSize="188,306" />
@@ -87,6 +178,11 @@
                                 Background="{DynamicResource AccentFillColorDefaultBrush}"
                                 Visibility="{Binding HasVersion, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Text="{Binding VersionText}" Foreground="White" FontSize="11" />
+                        </Border>
+                        <!-- サブにある文書の保存先と、つながっていない印(決定ログ S-4) -->
+                        <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="4" Padding="6,1" CornerRadius="4"
+                                Style="{StaticResource StorageBadge}" Visibility="{Binding HasStorage, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding StorageText}" Foreground="White" FontSize="11" />
                         </Border>
                     </Grid>
                 </Border>
@@ -113,6 +209,10 @@
                     <ColumnDefinition Width="80" />
                 </Grid.ColumnDefinitions>
                 <DockPanel Grid.Column="0" Margin="0,0,8,0">
+                    <Border DockPanel.Dock="Right" Margin="6,0,0,0" Padding="5,0" CornerRadius="4" VerticalAlignment="Center"
+                            Style="{StaticResource StorageBadge}" Visibility="{Binding HasStorage, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{Binding StorageText}" Foreground="White" FontSize="11" />
+                    </Border>
                     <Border DockPanel.Dock="Right" Margin="6,0,0,0" Padding="5,0" CornerRadius="4" VerticalAlignment="Center"
                             Background="{DynamicResource AccentFillColorDefaultBrush}"
                             Visibility="{Binding HasVersion, Converter={StaticResource BoolToVisibility}}">
@@ -171,9 +271,18 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <ui:TitleBar x:Name="AppTitleBar" Grid.Row="0" Title="PdfManager" />
+
+        <!-- 下部:サブライブラリの接続状況(決定ログ S-1)。押すと設定画面を開く -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="16,0,16,8"
+                    Visibility="{Binding HasSubs, Converter={StaticResource BoolToVisibility}}">
+            <ui:Button Appearance="Transparent" Padding="8,2" Icon="{ui:SymbolIcon HardDrive20}" Content="{Binding SubStatusText}"
+                       Click="OnSubStatusClick" ToolTip="サブライブラリの接続状況(押すと設定画面を開きます)"
+                       AutomationProperties.AutomationId="SubStatus" />
+        </StackPanel>
 
         <!-- ツールバー -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,4,16,12">
@@ -203,9 +312,10 @@
             </Grid.ColumnDefinitions>
 
             <!-- 左:絞り込み -->
-            <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
+            <Border Grid.Column="0" Style="{StaticResource PaneBorder}" Padding="16,16,4,16">
+                <!-- 横にはみ出さないよう、幅に合わせて折り返す。右側はスクロールバーと重ならないよう空ける -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,0,14,0">
                         <DockPanel Margin="0,0,0,8">
                             <ui:Button DockPanel.Dock="Right" Content="条件をクリア" Appearance="Transparent" Padding="6,2"
                                        Command="{Binding ClearConditionsCommand}" />
@@ -220,79 +330,79 @@
                         <CheckBox Content="旧版も表示する" IsChecked="{Binding IncludeOldVersions}" Margin="0,0,0,12"
                                   ToolTip="版のある PDF は、ふだんは最新版だけを表示します" AutomationProperties.Name="旧版も表示する" />
 
-                        <Expander Header="タグ" IsExpanded="True" Margin="0,0,0,8">
+                        <!-- タグ(決定ログ L-1)。チェック=含む、右クリック=除外 -->
+                        <ui:TextBlock Text="タグ" FontTypography="BodyStrong" Margin="0,4,0,4" />
+                        <ui:TextBlock Text="タグはまだありません" Style="{StaticResource SecondaryText}" Margin="0,0,0,8"
+                                      Visibility="{Binding HasTags, Converter={StaticResource InverseBoolToVisibility}}" />
+                        <StackPanel Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibility}}" Margin="0,0,0,8">
+                            <WrapPanel Margin="0,0,0,4">
+                                <RadioButton GroupName="TagMode" Content="すべて含む" Margin="0,0,12,0"
+                                             IsChecked="{Binding IsTagAny, Converter={StaticResource InverseBool}}" />
+                                <RadioButton GroupName="TagMode" Content="どれかを含む" IsChecked="{Binding IsTagAny}"
+                                             AutomationProperties.Name="どれかを含む" />
+                            </WrapPanel>
+                            <ui:TextBlock Text="チェック=含む/右クリック=除外。数字は今の結果の中の件数です。" Style="{StaticResource SecondaryText}" FontSize="12" />
+                        </StackPanel>
+
+                        <!-- 項目(左に常に表示するタググループ、決定ログ Q-14)。検索欄でグループの中のタグを絞り込める -->
+                        <ItemsControl ItemsSource="{Binding ItemSections}" AutomationProperties.Name="項目">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Expander Header="{Binding Group.Name}" IsExpanded="True" Margin="0,0,0,8">
+                                        <StackPanel>
+                                            <ui:TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="検索" Icon="{ui:SymbolIcon Search24}"
+                                                        Margin="0,0,0,6" AutomationProperties.Name="{Binding SearchName}" />
+                                            <ui:TextBlock Text="タグはまだありません" Style="{StaticResource SecondaryText}" FontSize="12"
+                                                          Visibility="{Binding HasItems, Converter={StaticResource InverseBoolToVisibility}}" />
+                                            <ItemsControl ItemsSource="{Binding VisibleItems}" ItemTemplate="{StaticResource PinnedTagFilterTemplate}"
+                                                          AutomationProperties.Name="{Binding Group.Name}" />
+                                        </StackPanel>
+                                    </Expander>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- 項目にないタグ・タググループの検索(決定ログ Q-7)と未設定(Q-5) -->
+                        <Expander Header="タグを検索" IsExpanded="True" Margin="0,0,0,8">
                             <StackPanel>
-                                <ui:TextBlock Text="タグはまだありません" Style="{StaticResource SecondaryText}"
-                                              Visibility="{Binding HasTags, Converter={StaticResource InverseBoolToVisibility}}" />
-                                <StackPanel Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibility}}">
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                        <RadioButton GroupName="TagMode" Content="すべて含む" Margin="0,0,12,0"
-                                                     IsChecked="{Binding IsTagAny, Converter={StaticResource InverseBool}}" />
-                                        <RadioButton GroupName="TagMode" Content="どれかを含む" IsChecked="{Binding IsTagAny}"
-                                                     AutomationProperties.Name="どれかを含む" />
-                                    </StackPanel>
-                                    <ui:TextBlock Text="チェック=含む/右クリック=除外。数字は今の結果の中の件数です。" Style="{StaticResource SecondaryText}" FontSize="12" Margin="0,0,0,4" />
-                                </StackPanel>
-                                <ItemsControl ItemsSource="{Binding TagFilters}" AutomationProperties.Name="絞り込みのタグ">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <DockPanel Margin="0,1" Background="Transparent">
-                                                <DockPanel.ContextMenu>
-                                                    <ContextMenu>
-                                                        <MenuItem Header="{Binding ExcludeMenuText}" Command="{Binding ToggleExcludeCommand}" />
-                                                    </ContextMenu>
-                                                </DockPanel.ContextMenu>
-                                                <DockPanel.Style>
-                                                    <Style TargetType="DockPanel">
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsZero}" Value="True">
-                                                                <Setter Property="Opacity" Value="0.5" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </DockPanel.Style>
-                                                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat={}{0:N0}}" Margin="8,0,0,0"
-                                                              VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                                <ui:TextBlock DockPanel.Dock="Right" Text="✕ 除外" Margin="8,0,0,0" VerticalAlignment="Center"
-                                                              Foreground="{DynamicResource SystemFillColorCriticalBrush}"
-                                                              Visibility="{Binding IsExcluded, Converter={StaticResource BoolToVisibility}}" />
-                                                <CheckBox IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Tag.Name}">
-                                                    <StackPanel>
-                                                        <ui:TextBlock Text="{Binding Tag.Name}" TextTrimming="CharacterEllipsis" />
-                                                        <ui:TextBlock Text="{Binding Tag.AttributeText}" FontSize="12" TextTrimming="CharacterEllipsis"
-                                                                      Foreground="{DynamicResource TextFillColorSecondaryBrush}">
-                                                            <ui:TextBlock.Style>
-                                                                <Style TargetType="ui:TextBlock">
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding Tag.AttributeText}" Value="">
-                                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </ui:TextBlock.Style>
-                                                        </ui:TextBlock>
-                                                    </StackPanel>
-                                                </CheckBox>
-                                            </DockPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <ui:TextBox Text="{Binding OtherTagSearch, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="タグ名・グループ名"
+                                            Icon="{ui:SymbolIcon Search24}" Margin="0,0,0,6" AutomationProperties.Name="タグを検索" />
+                                <DockPanel Margin="0,1">
+                                    <ui:TextBlock DockPanel.Dock="Right" Text="{Binding UntaggedCount, StringFormat={}{0:N0}}" Margin="8,0,0,0"
+                                                  VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <CheckBox Content="未設定(タグなし)" IsChecked="{Binding UntaggedOnly}" AutomationProperties.Name="未設定(タグなし)"
+                                              ToolTip="タグが 1 つも付いていない PDF だけにします" />
+                                </DockPanel>
+                                <ui:TextBlock Text="{Binding OtherTagHint}" Style="{StaticResource SecondaryText}" FontSize="12" Margin="0,4,0,4" />
+                                <ItemsControl ItemsSource="{Binding OtherTags}" ItemTemplate="{StaticResource TagFilterTemplate}" AutomationProperties.Name="絞り込みのタグ" />
                             </StackPanel>
                         </Expander>
 
-                        <!-- 項目ごとの条件(決定ログ L-2) -->
-                        <Expander Header="項目" IsExpanded="True" Margin="0,0,0,8">
+                        <!-- 補助項目(決定ログ Q-6)。初めは閉じておく。入っている値から選ぶか、文字・範囲で指定する -->
+                        <Expander Header="補助項目" Margin="0,0,0,8">
                             <StackPanel>
-                                <ui:TextBlock Text="項目はまだ定義されていません" Style="{StaticResource SecondaryText}"
+                                <ui:TextBlock Text="補助項目はまだありません" Style="{StaticResource SecondaryText}"
                                               Visibility="{Binding HasFields, Converter={StaticResource InverseBoolToVisibility}}" />
-                                <ItemsControl ItemsSource="{Binding FieldFilters}" AutomationProperties.Name="絞り込みの項目">
+                                <ItemsControl ItemsSource="{Binding FieldFilters}" AutomationProperties.Name="絞り込みの補助項目">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <StackPanel Margin="0,0,0,10">
+                                            <StackPanel Margin="0,0,0,12">
                                                 <ui:TextBlock Text="{Binding Field.Name}" FontTypography="BodyStrong" Margin="0,0,0,4" />
+                                                <StackPanel Visibility="{Binding HasValues, Converter={StaticResource BoolToVisibility}}">
+                                                    <ui:TextBox Text="{Binding ValueSearch, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="値を検索(例:202610)"
+                                                                Icon="{ui:SymbolIcon Search24}" Margin="0,0,0,4" AutomationProperties.Name="{Binding ValueSearchName}" />
+                                                    <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                                        <ItemsControl ItemsSource="{Binding VisibleOptions}" ItemTemplate="{StaticResource OptionFilterTemplate}"
+                                                                      AutomationProperties.Name="{Binding Field.Name, StringFormat={}{0}の値}" />
+                                                    </ScrollViewer>
+                                                </StackPanel>
+                                                <ui:TextBlock Text="含む文字" Style="{StaticResource SecondaryText}" FontSize="12" Margin="0,6,0,2"
+                                                              Visibility="{Binding IsText, Converter={StaticResource BoolToVisibility}}" />
                                                 <ui:TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="含む文字"
                                                             AutomationProperties.Name="{Binding Field.Name}"
                                                             Visibility="{Binding IsText, Converter={StaticResource BoolToVisibility}}" />
+                                                <ui:TextBlock Text="範囲で指定" Style="{StaticResource SecondaryText}" FontSize="12" Margin="0,6,0,2"
+                                                              Visibility="{Binding IsRange, Converter={StaticResource BoolToVisibility}}" />
                                                 <Grid Visibility="{Binding IsRange, Converter={StaticResource BoolToVisibility}}">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*" />
@@ -305,26 +415,6 @@
                                                     <ui:TextBox Grid.Column="2" Text="{Binding To, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="{Binding RangeHint}"
                                                                 AutomationProperties.Name="{Binding Field.Name, StringFormat={}{0}(まで)}" />
                                                 </Grid>
-                                                <ItemsControl ItemsSource="{Binding Options}" Visibility="{Binding IsSelect, Converter={StaticResource BoolToVisibility}}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <DockPanel Margin="0,1">
-                                                                <DockPanel.Style>
-                                                                    <Style TargetType="DockPanel">
-                                                                        <Style.Triggers>
-                                                                            <DataTrigger Binding="{Binding IsZero}" Value="True">
-                                                                                <Setter Property="Opacity" Value="0.5" />
-                                                                            </DataTrigger>
-                                                                        </Style.Triggers>
-                                                                    </Style>
-                                                                </DockPanel.Style>
-                                                                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat={}{0:N0}}" VerticalAlignment="Center"
-                                                                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                                                <CheckBox Content="{Binding Value}" IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Value}" />
-                                                            </DockPanel>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
                                                 <ui:TextBlock Text="{Binding Error}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
                                             </StackPanel>
                                         </DataTemplate>
@@ -375,24 +465,10 @@
                             </StackPanel>
                         </Expander>
 
-                        <Expander Header="項目" Margin="0,0,0,8">
-                            <StackPanel>
-                                <ui:TextBlock Text="項目はまだ定義されていません" Style="{StaticResource SecondaryText}"
-                                              Visibility="{Binding HasFields, Converter={StaticResource InverseBoolToVisibility}}" />
-                                <ui:TextBlock Text="項目の値はキーワード検索で探せます。項目ごとの条件(範囲など)は今後追加します。" Style="{StaticResource SecondaryText}" FontSize="12"
-                                              Margin="0,0,0,4" Visibility="{Binding HasFields, Converter={StaticResource BoolToVisibility}}" />
-                                <ItemsControl ItemsSource="{Binding Fields}" AutomationProperties.Name="絞り込みの項目">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <DockPanel Margin="0,2">
-                                                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding TypeLabel}" Margin="8,0,0,0"
-                                                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                                <ui:TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                            </DockPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
+                        <!-- 保存先(決定ログ S-6)。ふだんは使わないので折りたたんでおく -->
+                        <Expander Header="保存先" Margin="0,0,0,8" Visibility="{Binding HasSubs, Converter={StaticResource BoolToVisibility}}">
+                            <ComboBox ItemsSource="{Binding StorageFilters}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedStorageFilter}"
+                                      AutomationProperties.Name="保存先で絞り込み" />
                         </Expander>
                     </StackPanel>
                 </ScrollViewer>
@@ -409,7 +485,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <ui:InfoBar Grid.Row="0" Margin="4,0,4,8" IsClosable="True" Severity="Success"
-                                Title="削除" Message="{Binding ListMessage}" IsOpen="{Binding IsListMessageOpen, Mode=TwoWay}" />
+                                Title="{Binding ListMessageTitle}" Message="{Binding ListMessage}" IsOpen="{Binding IsListMessageOpen, Mode=TwoWay}" />
                     <DockPanel Grid.Row="1" Margin="4,0,4,8">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                             <ComboBox ItemsSource="{Binding SortOptions}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedSort}"
@@ -451,7 +527,7 @@
                                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                                  VirtualizingPanel.ScrollUnit="Pixel" AutomationProperties.Name="PDF の一覧">
                             <ListBox.ContextMenu>
-                                <ContextMenu>
+                                <ContextMenu Opened="OnListContextMenuOpened">
                                     <MenuItem Header="開く" Click="OnOpenClick" InputGestureText="Enter">
                                         <MenuItem.Icon>
                                             <ui:SymbolIcon Symbol="Open24" />
@@ -460,6 +536,12 @@
                                     <MenuItem Header="版としてまとめる" Click="OnGroupVersionsClick">
                                         <MenuItem.Icon>
                                             <ui:SymbolIcon Symbol="Stack24" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <!-- 決定ログ S-3: 移す先は開くたびに並べる -->
+                                    <MenuItem x:Name="MoveMenu" Header="保存先を移す">
+                                        <MenuItem.Icon>
+                                            <ui:SymbolIcon Symbol="FolderArrowRight24" />
                                         </MenuItem.Icon>
                                     </MenuItem>
                                     <MenuItem Header="削除" Click="OnDeleteClick" InputGestureText="Delete">
@@ -532,6 +614,9 @@
                         </Border>
                         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
                             <StackPanel>
+                                <!-- 決定ログ S-4: つながっていないサブの文書は表示のみ -->
+                                <ui:InfoBar Severity="Warning" IsClosable="False" Margin="0,0,0,8" Title="表示のみ"
+                                            Message="{Binding ReadOnlyMessage}" IsOpen="{Binding IsEditable, Converter={StaticResource InverseBool}, Mode=OneWay}" />
                                 <DockPanel>
                                     <ui:Button DockPanel.Dock="Right" Content="開く" Icon="{ui:SymbolIcon Open24}" Click="OnOpenClick"
                                                ToolTip="ビューアで開きます(ダブルクリック・Enter でも開けます)" AutomationProperties.Name="開く" />
@@ -543,10 +628,10 @@
                                     <Image Source="{Binding SelectedThumbnailPath, Converter={StaticResource Thumbnail}}" Stretch="Uniform" />
                                 </Border>
 
-                                <views:DocumentEditorView DataContext="{Binding Editor}" />
+                                <views:DocumentEditorView DataContext="{Binding Editor}" IsEnabled="{Binding DataContext.IsEditable, RelativeSource={RelativeSource AncestorType=Window}}" />
 
                                 <!-- 版の履歴(決定ログ N-1①・N-3・N-6・N-8) -->
-                                <StackPanel Visibility="{Binding IsSingleSelection, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Visibility="{Binding IsSingleSelection, Converter={StaticResource BoolToVisibility}}" IsEnabled="{Binding IsEditable}">
                                     <DockPanel Margin="0,16,0,6">
                                         <ui:Button DockPanel.Dock="Right" Content="新しい版を追加" Icon="{ui:SymbolIcon DocumentAdd24}"
                                                    Click="OnAddVersionClick" AutomationProperties.Name="新しい版を追加" />
@@ -617,7 +702,10 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
+                                        <ui:TextBlock Grid.Row="6" Text="保存先" Style="{StaticResource InfoLabel}" />
+                                        <ui:TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Storage}" TextWrapping="Wrap" AutomationProperties.AutomationId="StorageInfo" />
                                         <ui:TextBlock Grid.Row="0" Text="元のファイル名" Style="{StaticResource InfoLabel}" />
                                         <ui:TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding OriginalFileName}" TextWrapping="Wrap" />
                                         <ui:TextBlock Grid.Row="1" Text="ページ数" Style="{StaticResource InfoLabel}" />

@@ -24,7 +24,7 @@ public sealed class PdfManagerDatabaseTests : IDisposable
 
         Assert.Equal(
             ["document_field_values", "document_links", "document_tags", "documents", "field_options",
-             "fields", "page_texts", "saved_searches", "tag_attributes", "tags", "version_series"],
+             "fields", "library_meta", "page_texts", "saved_searches", "sub_libraries", "tag_groups", "tag_links", "tags", "version_series"],
             tables);
         Assert.Equal(PdfManagerDatabase.SchemaVersion, PdfManagerDatabase.GetUserVersion(connection));
     }
@@ -101,6 +101,45 @@ public sealed class PdfManagerDatabaseTests : IDisposable
         Assert.Equal(["IODATA|iodata", "上野|上野"], Query(connection, "SELECT name || '|' || normalized_name FROM tags ORDER BY id;"));
         Assert.Equal(["1", "3"], Query(connection, "SELECT tag_id FROM document_tags ORDER BY tag_id;"));
         Assert.Throws<SqliteException>(() => Execute(connection, "INSERT INTO tags (name, normalized_name) VALUES ('Iodata', 'iodata');"));
+    }
+
+    // 決定ログ R-11・Q-11: 選択肢型の項目はタググループ(順位 1、項目)に、属性は紐づけに変わる
+    [Fact]
+    public void Initialize_UpgradesVersion6_SelectFieldsBecomeTagGroupsAndAttributesBecomeLinks()
+    {
+        using (var v6 = PdfManagerDatabase.Open(_databasePath))
+        {
+            Execute(v6, Schema.V1);
+            using (var transaction = v6.BeginTransaction())
+            {
+                Schema.MigrateToV2(v6, transaction);
+                transaction.Commit();
+            }
+            Execute(v6, Schema.V3 + Schema.V4 + Schema.V5 + Schema.V6 + "PRAGMA user_version = 6;");
+            InsertDocument(v6, "doc-1");
+            Execute(v6, """
+                INSERT INTO fields (id, name, type, sort_order) VALUES (1, 'エリア', 'select', 1), (2, '年月', 'yearmonth', 2);
+                INSERT INTO field_options (id, field_id, value, sort_order) VALUES (1, 1, '上野エリア', 1), (2, 1, '秋葉原エリア', 2);
+                INSERT INTO tags (id, name, normalized_name) VALUES (1, '■■マネージャー', '■■マネージャー'), (2, 'IODATA', 'iodata');
+                INSERT INTO tag_attributes (tag_id, option_id) VALUES (1, 1);
+                INSERT INTO document_field_values (document_id, field_id, value_text) VALUES ('doc-1', 1, '上野エリア');
+                INSERT INTO document_field_values (document_id, field_id, value_date) VALUES ('doc-1', 2, '2026-09-01');
+                UPDATE documents SET file_name_source_type = 'field', file_name_source_id = 1 WHERE id = 'doc-1';
+                """);
+        }
+
+        using var connection = OpenInitialized();
+
+        Assert.Equal(["エリア|1|1", "エリアに紐づくタグ|2|0"], Query(connection, "SELECT name || '|' || rank || '|' || is_pinned FROM tag_groups ORDER BY id;"));
+        Assert.Equal(["IODATA|", "■■マネージャー|エリアに紐づくタグ", "上野エリア|エリア", "秋葉原エリア|エリア"],
+            Query(connection, "SELECT t.name || '|' || COALESCE(g.name, '') FROM tags t LEFT JOIN tag_groups g ON g.id = t.group_id ORDER BY t.name;"));
+        Assert.Equal(["■■マネージャー→上野エリア"],
+            Query(connection, "SELECT c.name || '→' || p.name FROM tag_links l JOIN tags c ON c.id = l.child_id JOIN tags p ON p.id = l.parent_id;"));
+        Assert.Equal(["上野エリア"], Query(connection, "SELECT t.name FROM document_tags d JOIN tags t ON t.id = d.tag_id WHERE d.document_id = 'doc-1';"));
+        Assert.Equal(["tag|上野エリア"], Query(connection, "SELECT d.file_name_source_type || '|' || t.name FROM documents d JOIN tags t ON t.id = d.file_name_source_id;"));
+        Assert.Equal(["年月"], Query(connection, "SELECT name FROM fields;"));
+        Assert.Equal(["2026-09-01"], Query(connection, "SELECT value_date FROM document_field_values;"));
+        Assert.Empty(Query(connection, "SELECT name FROM sqlite_master WHERE name = 'tag_attributes';"));
     }
 
     // 日本語の部分一致検索に FTS5 の trigram トークナイザを使う前提(docs/03)を確認する
