@@ -37,6 +37,42 @@ public sealed partial class TagSection(TagGroup? group, Action onSearchChanged, 
     // 決定ログ Q-12: 検索欄で Enter を押すと、見つかればそのタグを付け、なければこのグループに新しく作って付ける
     [RelayCommand]
     private Task EnterAsync() => onEnter(this);
+
+    // ==== 畳む(決定ログ AA-1〜AA-6) ====
+
+    // タグを選んだら畳む欄か(設定の順位以下で、下に次の順位の欄があるもの)
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowContent), nameof(ToggleName), nameof(ToggleSymbol))]
+    public partial bool CanCollapse { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowContent), nameof(ToggleName), nameof(ToggleSymbol))]
+    public partial bool IsCollapsed { get; set; }
+
+    // 決定ログ AA-2: 畳んだときに 1 行で表示する、付いているタグ
+    [ObservableProperty]
+    public partial string Summary { get; set; } = "";
+
+    public bool ShowContent => !(CanCollapse && IsCollapsed);
+
+    public string ToggleName => IsCollapsed ? $"{Title}を開く" : $"{Title}を畳む";
+
+    public Wpf.Ui.Controls.SymbolRegular ToggleSymbol => IsCollapsed ? Wpf.Ui.Controls.SymbolRegular.ChevronRight24 : Wpf.Ui.Controls.SymbolRegular.ChevronDown24;
+
+    // 決定ログ AA-4: 検索欄に入力の位置を移すよう画面に頼む
+    public event Action? FocusSearchRequested;
+
+    public void RequestFocus() => FocusSearchRequested?.Invoke();
+
+    [RelayCommand]
+    private void ToggleCollapsed()
+    {
+        IsCollapsed = !IsCollapsed;
+        if (!IsCollapsed)
+        {
+            RequestFocus();
+        }
+    }
 }
 
 // 詳細エリアに表示する、付いているタグ(グループごとに 1 行、決定ログ R-11 ④)

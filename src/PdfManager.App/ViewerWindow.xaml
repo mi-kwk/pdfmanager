@@ -38,12 +38,23 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <ui:TitleBar Grid.Row="0" Title="ビューア" />
 
+        <!-- 続きの前後を開く(決定ログ V-5)と、2 画面比較(F-05、W-1) -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0">
+            <ui:Button x:Name="PreviousButton" Content="前へ" Icon="{ui:SymbolIcon ChevronLeft24}" Padding="8,4" Margin="0,0,4,0"
+                       Visibility="Collapsed" Click="OnPreviousClick" AutomationProperties.Name="前へ" />
+            <ui:Button x:Name="NextButton" Content="次へ" Icon="{ui:SymbolIcon ChevronRight24}" Padding="8,4" Margin="0,0,12,0"
+                       Visibility="Collapsed" Click="OnNextClick" AutomationProperties.Name="次へ" />
+            <ui:Button x:Name="CompareButton" Content="比較" Icon="{ui:SymbolIcon SplitVertical24}" Padding="8,4" Click="OnCompareClick"
+                       ToolTip="開いている PDF を左右に並べて見比べます" AutomationProperties.Name="比較" />
+        </StackPanel>
+
         <!-- タブ -->
-        <ListBox Grid.Row="1" x:Name="TabList" Margin="12,0,12,0" Background="Transparent" BorderThickness="0"
+        <ListBox Grid.Row="1" x:Name="TabList" Margin="12,0,280,0" Background="Transparent" BorderThickness="0"
                  ItemContainerStyle="{StaticResource TabItemStyle}" SelectionChanged="OnTabSelectionChanged"
                  ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
                  AutomationProperties.Name="開いている PDF">
@@ -66,10 +77,33 @@
             </ListBox.ItemTemplate>
         </ListBox>
 
-        <!-- PDF の表示(タブごとの WebView2 を重ね、選択中のものだけ表示する) -->
-        <Border Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+        <!-- 2 画面比較の左右の選択(決定ログ W-2)。比較中だけ表示する -->
+        <Grid Grid.Row="2" x:Name="CompareBar" Visibility="Collapsed" Margin="12,6,12,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <ComboBox Grid.Column="0" x:Name="LeftChoice" DisplayMemberPath="Title" SelectionChanged="OnLeftChoiceChanged"
+                      AutomationProperties.Name="左に表示する PDF" />
+            <ui:Button Grid.Column="1" Content="比較をやめる" Icon="{ui:SymbolIcon Dismiss24}" Margin="12,0" Padding="8,4" Click="OnEndCompareClick"
+                       AutomationProperties.Name="比較をやめる" />
+            <ComboBox Grid.Column="2" x:Name="RightChoice" DisplayMemberPath="Title" SelectionChanged="OnRightChoiceChanged"
+                      AutomationProperties.Name="右に表示する PDF" />
+        </Grid>
+
+        <!-- PDF の表示(タブごとの WebView2 を重ね、選択中のものだけ表示する。比較中は左右に 1 つずつ) -->
+        <Border Grid.Row="3" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
             <Grid x:Name="Host">
-                <ui:TextBlock x:Name="EmptyText" Text="メイン画面で PDF をダブルクリックすると、ここにタブで開きます"
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="LeftColumn" Width="*" />
+                    <ColumnDefinition x:Name="SplitterColumn" Width="0" />
+                    <ColumnDefinition x:Name="RightColumn" Width="0" />
+                </Grid.ColumnDefinitions>
+                <!-- 決定ログ W-4: 境目をドラッグして左右の幅を変えられる -->
+                <GridSplitter Grid.Column="1" x:Name="Splitter" HorizontalAlignment="Stretch" Visibility="Collapsed"
+                              Background="{DynamicResource CardStrokeColorDefaultBrush}" ResizeBehavior="PreviousAndNext" />
+                <ui:TextBlock x:Name="EmptyText" Grid.ColumnSpan="3" Text="メイン画面で PDF をダブルクリックすると、ここにタブで開きます"
                               HorizontalAlignment="Center" VerticalAlignment="Center"
                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
             </Grid>

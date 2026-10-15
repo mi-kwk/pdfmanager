@@ -13,8 +13,15 @@ public sealed record ViewPreferences(string Sort = "Registered", long? SortField
 }
 
 // ShowRegisterAll: 取り込み画面に「すべて登録」ボタンも表示する(決定ログ R-5、U-17②。初めはオフ)
-public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<RecentLibrary> RecentLibraries, ViewPreferences? View = null, bool ShowRegisterAll = false)
+// TagCollapseRank: タグの欄で、タグを選ぶと畳む順位の上限。0 は畳まない(決定ログ AA-1。初めは順位 1 だけ)
+public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<RecentLibrary> RecentLibraries, ViewPreferences? View = null,
+    bool ShowRegisterAll = false, int TagCollapseRank = AppSettings.DefaultTagCollapseRank)
 {
+    public const int DefaultTagCollapseRank = 1;
+
+    // 畳めるのは順位 1〜4(順位 5 の下には欄がない)
+    public const int MaxTagCollapseRank = 4;
+
     public static AppSettings Empty { get; } = new(null, []);
 }
 

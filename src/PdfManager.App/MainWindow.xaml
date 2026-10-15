@@ -153,6 +153,53 @@
             </DockPanel>
         </DataTemplate>
 
+        <!-- 続き・関連の 1 行(決定ログ V-1)。開く・選択・外す -->
+        <DataTemplate x:Key="ChainRowTemplate">
+            <Border Padding="8,6" Margin="0,0,0,4" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:Button Icon="{ui:SymbolIcon Open24}" Padding="6,4" Margin="0,0,4,0" ToolTip="開く" Tag="{Binding Id}" Click="OnOpenLinkClick"
+                                   AutomationProperties.Name="{Binding Document.Title, StringFormat={}{0}を開く}" />
+                        <ui:Button Icon="{ui:SymbolIcon CursorClick24}" Padding="6,4" Margin="0,0,4,0" ToolTip="選択" Tag="{Binding Id}" Click="OnSelectLinkClick"
+                                   AutomationProperties.Name="{Binding Document.Title, StringFormat={}{0}を選択}" />
+                        <ui:Button Icon="{ui:SymbolIcon LinkDismiss24}" Padding="6,4" ToolTip="続きから外す" Tag="{Binding Id}" Click="OnRemoveChainClick"
+                                   AutomationProperties.Name="{Binding Document.Title, StringFormat={}{0}を続きから外す}" />
+                    </StackPanel>
+                    <StackPanel>
+                        <ui:TextBlock Text="{Binding Text}" FontTypography="BodyStrong" TextTrimming="CharacterEllipsis" />
+                        <ui:TextBlock Text="{Binding Sub}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="RelatedRowTemplate">
+            <Border Padding="8,6" Margin="0,0,0,4" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:Button Icon="{ui:SymbolIcon Open24}" Padding="6,4" Margin="0,0,4,0" ToolTip="開く" Tag="{Binding Id}" Click="OnOpenLinkClick"
+                                   AutomationProperties.Name="{Binding Document.Title, StringFormat={}{0}を開く}" />
+                        <ui:Button Icon="{ui:SymbolIcon CursorClick24}" Padding="6,4" Margin="0,0,4,0" ToolTip="選択" Tag="{Binding Id}" Click="OnSelectLinkClick"
+                                   AutomationProperties.Name="{Binding Document.Title, StringFormat={}{0}を選択}" />
+                        <ui:Button Icon="{ui:SymbolIcon LinkDismiss24}" Padding="6,4" ToolTip="関連から外す" Tag="{Binding Id}" Click="OnRemoveRelatedClick"
+                                   AutomationProperties.Name="{Binding Document.Title, StringFormat={}{0}を関連から外す}" />
+                    </StackPanel>
+                    <StackPanel>
+                        <ui:TextBlock Text="{Binding Text}" FontTypography="BodyStrong" TextTrimming="CharacterEllipsis" />
+                        <ui:TextBlock Text="{Binding Sub}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </DataTemplate>
+
         <!-- 保存先の印。つながっていないときは注意の色(決定ログ S-4) -->
         <Style x:Key="StorageBadge" TargetType="Border">
             <Setter Property="Background" Value="#FF6B6B6B" />
@@ -178,6 +225,11 @@
                                 Background="{DynamicResource AccentFillColorDefaultBrush}"
                                 Visibility="{Binding HasVersion, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Text="{Binding VersionText}" Foreground="White" FontSize="11" />
+                        </Border>
+                        <!-- 続きの位置(決定ログ V-4) -->
+                        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4" Padding="6,1" CornerRadius="4"
+                                Background="#FF5B5FC7" Visibility="{Binding HasChain, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding ChainText}" Foreground="White" FontSize="11" />
                         </Border>
                         <!-- サブにある文書の保存先と、つながっていない印(決定ログ S-4) -->
                         <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="4" Padding="6,1" CornerRadius="4"
@@ -217,6 +269,10 @@
                             Background="{DynamicResource AccentFillColorDefaultBrush}"
                             Visibility="{Binding HasVersion, Converter={StaticResource BoolToVisibility}}">
                         <TextBlock Text="{Binding VersionText}" Foreground="White" FontSize="11" />
+                    </Border>
+                    <Border DockPanel.Dock="Right" Margin="6,0,0,0" Padding="5,0" CornerRadius="4" VerticalAlignment="Center"
+                            Background="#FF5B5FC7" Visibility="{Binding HasChain, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{Binding ChainText}" Foreground="White" FontSize="11" />
                     </Border>
                     <ui:TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
                 </DockPanel>
@@ -321,6 +377,34 @@
                                        Command="{Binding ClearConditionsCommand}" />
                             <ui:TextBlock Text="絞り込み" FontTypography="BodyStrong" VerticalAlignment="Center" />
                         </DockPanel>
+
+                        <!-- 保存した検索(F-16、決定ログ X-3)。初めは閉じておく -->
+                        <Expander Header="保存した検索" Margin="0,0,0,8">
+                            <StackPanel>
+                                <ui:TextBlock Text="まだありません。条件を指定して「今の条件を保存」を押すと、ここから呼び出せます。" Style="{StaticResource SecondaryText}" FontSize="12"
+                                              Margin="0,0,0,6" Visibility="{Binding HasSavedSearches, Converter={StaticResource InverseBoolToVisibility}}" />
+                                <ItemsControl ItemsSource="{Binding SavedSearches}" AutomationProperties.Name="保存した検索の一覧">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <ui:Button Content="{Binding Name}" Appearance="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                       Padding="8,4" Margin="0,0,0,2" Click="OnApplySavedSearchClick" ToolTip="この条件で絞り込みます(右クリックで名前の変更・並び替え・削除)"
+                                                       AutomationProperties.Name="{Binding Name, StringFormat={}保存した検索 {0}}">
+                                                <ui:Button.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="名前の変更" Click="OnRenameSavedSearchClick" />
+                                                        <MenuItem Header="上へ" Click="OnMoveSavedSearchUpClick" />
+                                                        <MenuItem Header="下へ" Click="OnMoveSavedSearchDownClick" />
+                                                        <MenuItem Header="削除" Click="OnDeleteSavedSearchClick" />
+                                                    </ContextMenu>
+                                                </ui:Button.ContextMenu>
+                                            </ui:Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <ui:Button Content="今の条件を保存" Icon="{ui:SymbolIcon Save24}" Margin="0,6,0,0" Click="OnSaveSearchClick"
+                                           AutomationProperties.Name="今の条件を保存" />
+                            </StackPanel>
+                        </Expander>
 
                         <!-- フリー検索(決定ログ I-1〜I-5) -->
                         <ui:TextBox x:Name="SearchBox" PlaceholderText="キーワードで検索(Ctrl+F)" Icon="{ui:SymbolIcon Search24}"
@@ -533,6 +617,11 @@
                                             <ui:SymbolIcon Symbol="Open24" />
                                         </MenuItem.Icon>
                                     </MenuItem>
+                                    <MenuItem Header="並べて比較" Click="OnCompareSelectedClick">
+                                        <MenuItem.Icon>
+                                            <ui:SymbolIcon Symbol="SplitVertical24" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
                                     <MenuItem Header="版としてまとめる" Click="OnGroupVersionsClick">
                                         <MenuItem.Icon>
                                             <ui:SymbolIcon Symbol="Stack24" />
@@ -662,6 +751,9 @@
                                                             <ui:Button Icon="{ui:SymbolIcon Open24}" Padding="6,4" Margin="0,0,4,0" ToolTip="開く"
                                                                        Tag="{Binding Info.DocumentId}" Click="OnOpenVersionClick"
                                                                        AutomationProperties.Name="{Binding Info.DisplayName, StringFormat={}{0}を開く}" />
+                                                            <ui:Button Icon="{ui:SymbolIcon SplitVertical24}" Padding="6,4" Margin="0,0,4,0" ToolTip="今選んでいる版と並べて比較"
+                                                                       Tag="{Binding Info.DocumentId}" Click="OnCompareVersionClick"
+                                                                       AutomationProperties.Name="{Binding Info.DisplayName, StringFormat={}{0}と比較}" />
                                                             <ui:Button Icon="{ui:SymbolIcon CursorClick24}" Padding="6,4" Margin="0,0,4,0" ToolTip="この版を選択"
                                                                        Tag="{Binding Info.DocumentId}" Click="OnSelectVersionClick"
                                                                        AutomationProperties.Name="{Binding Info.DisplayName, StringFormat={}{0}を選択}" />
@@ -684,6 +776,32 @@
                                         <ui:TextBox Text="{Binding VersionLabel, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="任意(例:Rev.C)"
                                                     AutomationProperties.Name="この版の名前" />
                                     </DockPanel>
+                                </StackPanel>
+
+                                <!-- 続き・関連(決定ログ V-1・V-2) -->
+                                <StackPanel Visibility="{Binding IsSingleSelection, Converter={StaticResource BoolToVisibility}}" IsEnabled="{Binding IsEditable}">
+                                    <DockPanel Margin="0,16,0,6">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <ui:Button Content="前をつなぐ" Padding="8,4" Margin="0,0,4,0" Click="OnLinkPreviousClick" AutomationProperties.Name="前をつなぐ"
+                                                       ToolTip="この PDF の前(前編など)になる PDF を選びます" />
+                                            <ui:Button Content="次をつなぐ" Padding="8,4" Click="OnLinkNextClick" AutomationProperties.Name="次をつなぐ"
+                                                       ToolTip="この PDF の次(後編など)になる PDF を選びます" />
+                                        </StackPanel>
+                                        <ui:TextBlock Text="続き" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <ui:TextBlock Text="続きはありません。前編・後編などは「前をつなぐ」「次をつなぐ」でつなげます。" FontSize="12" TextWrapping="Wrap"
+                                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                  Visibility="{Binding HasChain, Converter={StaticResource InverseBoolToVisibility}}" />
+                                    <ItemsControl ItemsSource="{Binding ChainRows}" ItemTemplate="{StaticResource ChainRowTemplate}" AutomationProperties.Name="続き" />
+
+                                    <DockPanel Margin="0,16,0,6">
+                                        <ui:Button DockPanel.Dock="Right" Content="関連を追加" Icon="{ui:SymbolIcon Link24}" Padding="8,4" Click="OnAddRelatedClick"
+                                                   AutomationProperties.Name="関連を追加" ToolTip="この PDF に関連する PDF を選びます(順番なし)" />
+                                        <ui:TextBlock Text="関連" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <ui:TextBlock Text="関連する PDF はありません。" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                  Visibility="{Binding HasRelated, Converter={StaticResource InverseBoolToVisibility}}" />
+                                    <ItemsControl ItemsSource="{Binding RelatedRows}" ItemTemplate="{StaticResource RelatedRowTemplate}" AutomationProperties.Name="関連" />
                                 </StackPanel>
 
                                 <!-- 編集できない情報(決定ログ J-7) -->

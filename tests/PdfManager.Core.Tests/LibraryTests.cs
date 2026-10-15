@@ -139,6 +139,21 @@ public sealed class LibraryTests : IDisposable
         Assert.Equal(new ViewPreferences("Field", 7, false, true), store.Load().View);
     }
 
+    // 決定ログ AA-1: 前のバージョンの設定ファイル(項目がない)では、順位 1 だけを畳む
+    [Fact]
+    public void Settings_TagCollapseRankDefaultsToRankOneAndRoundTrips()
+    {
+        var store = new AppSettingsStore(Path.Combine(_root, "settings"));
+        Directory.CreateDirectory(Path.Combine(_root, "settings"));
+        File.WriteAllText(store.FilePath, """{ "lastLibraryFilePath": null, "recentLibraries": [], "showRegisterAll": true }""");
+
+        Assert.Equal(1, store.Load().TagCollapseRank);
+
+        store.Save(store.Load() with { TagCollapseRank = 0 });
+        Assert.Equal(0, store.Load().TagCollapseRank);
+        Assert.True(store.Load().ShowRegisterAll);
+    }
+
     [Fact]
     public void Settings_KeepsAtMostTenRecentLibraries()
     {

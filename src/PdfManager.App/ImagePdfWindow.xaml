@@ -1,0 +1,119 @@
+<ui:FluentWindow x:Class="PdfManager.App.ImagePdfWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:conv="clr-namespace:PdfManager.App.Converters"
+                 Title="画像から PDF 作成"
+                 Width="1000" Height="760" MinWidth="640" MinHeight="460"
+                 WindowStartupLocation="CenterOwner"
+                 ShowInTaskbar="False"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <conv:InverseBoolConverter x:Key="InverseBool" />
+    </ui:FluentWindow.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="画像から PDF 作成" ShowMinimize="False" />
+
+        <ui:TextBlock Grid.Row="1" Margin="20,0,20,8" TextWrapping="Wrap"
+                      Text="並んでいる順に 1 つの PDF にします(ZIP は ZIP ごとに 1 つ)。できた PDF は取り込み画面に入り、ほかの PDF と同じように入力して登録します。" />
+
+        <Grid Grid.Row="2" Margin="20,0,20,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- できる PDF の一覧(画像と ZIP を一緒に選んだときなど、2 つ以上のときだけ表示) -->
+            <ListBox Grid.Column="0" Width="220" Margin="0,0,12,0" ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}"
+                     Visibility="{Binding HasManyGroups, Converter={StaticResource BoolToVisibility}}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="作る PDF">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,2">
+                            <ui:TextBlock Text="{Binding Name}" FontTypography="BodyStrong" TextTrimming="CharacterEllipsis" />
+                            <ui:TextBlock FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis">
+                                <Run Text="{Binding Kind, Mode=OneWay}" /><Run Text=" ・ " /><Run Text="{Binding Header, Mode=OneWay}" />
+                            </ui:TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <!-- 決定ログ Y-2: 並び替え・回転・除外(選んでいる画像すべてに行う) -->
+                <WrapPanel Grid.Row="0" Margin="0,0,0,8" IsEnabled="{Binding IsCreating, Converter={StaticResource InverseBool}}">
+                    <ui:Button Content="前へ" Icon="{ui:SymbolIcon ArrowUp24}" Margin="0,0,4,0" Click="OnMoveUpClick" AutomationProperties.Name="前へ" />
+                    <ui:Button Content="後ろへ" Icon="{ui:SymbolIcon ArrowDown24}" Margin="0,0,12,0" Click="OnMoveDownClick" AutomationProperties.Name="後ろへ" />
+                    <ui:Button Content="右に回転" Icon="{ui:SymbolIcon ArrowRotateClockwise24}" Margin="0,0,4,0" Click="OnRotateRightClick" AutomationProperties.Name="右に回転" />
+                    <ui:Button Content="左に回転" Icon="{ui:SymbolIcon ArrowRotateCounterclockwise24}" Margin="0,0,12,0" Click="OnRotateLeftClick" AutomationProperties.Name="左に回転" />
+                    <ui:Button Content="除外" Icon="{ui:SymbolIcon Delete24}" Click="OnExcludeClick" AutomationProperties.Name="除外"
+                               ToolTip="選んでいる画像を PDF に入れません(元のファイルは消えません)" />
+                    <ui:TextBlock Text="{Binding SelectedGroup.Header}" VerticalAlignment="Center" Margin="16,0,0,0"
+                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </WrapPanel>
+                <ListBox Grid.Row="1" x:Name="PageList" ItemsSource="{Binding SelectedGroup.Pages}" SelectionMode="Extended"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="画像"
+                         VirtualizingPanel.IsVirtualizing="False">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Width="176" Margin="2" ToolTip="{Binding DisplayName}">
+                                <Grid Width="168" Height="168">
+                                    <Image Source="{Binding Thumbnail}" Stretch="Uniform" MaxWidth="160" MaxHeight="160">
+                                        <Image.LayoutTransform>
+                                            <RotateTransform Angle="{Binding Angle}" />
+                                        </Image.LayoutTransform>
+                                    </Image>
+                                    <ui:TextBlock Text="{Binding Problem}" TextWrapping="Wrap" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                                </Grid>
+                                <ui:TextBlock Text="{Binding DisplayName}" FontSize="12" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Grid>
+
+        <!-- 作り方の選択(決定ログ Y-1・Y-3) -->
+        <WrapPanel Grid.Row="3" Margin="20,12,20,0" IsEnabled="{Binding IsCreating, Converter={StaticResource InverseBool}}">
+            <CheckBox Content="1 枚ずつ別の PDF にする" IsChecked="{Binding OnePdfPerImage}" Margin="0,0,24,0" VerticalAlignment="Center"
+                      AutomationProperties.Name="1 枚ずつ別の PDF にする" />
+            <ui:TextBlock Text="画像の大きさ" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ComboBox ItemsSource="{Binding SizeChoices}" SelectedItem="{Binding SelectedSize}" DisplayMemberPath="Label" MinWidth="260"
+                      AutomationProperties.Name="画像の大きさ"
+                      ToolTip="スキャンした画像などで PDF が大きくなりすぎないよう、長辺を縮めます(紙の大きさは変わりません)" />
+        </WrapPanel>
+
+        <DockPanel Grid.Row="4" Margin="20,12,20,16">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="キャンセル" IsCancel="True" Click="OnCancelClick" Margin="0,0,8,0" AutomationProperties.Name="キャンセル" />
+                <ui:Button x:Name="CreateButton" Content="{Binding CreateText}" Appearance="Primary" Icon="{ui:SymbolIcon DocumentPdf24}" Click="OnCreateClick"
+                           IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" AutomationProperties.Name="PDF を作成" />
+            </StackPanel>
+            <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                <ui:TextBlock Text="{Binding ProgressText}" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <ProgressBar Value="{Binding ProgressValue}" Maximum="{Binding ProgressMaximum}" Margin="0,4,0,0"
+                             Visibility="{Binding IsCreating, Converter={StaticResource BoolToVisibility}}" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

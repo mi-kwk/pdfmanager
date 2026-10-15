@@ -10,6 +10,7 @@ using Microsoft.Win32;
 using PdfManager.App.Services;
 using PdfManager.App.ViewModels;
 using PdfManager.Core.Library;
+using PdfManager.Core.Search;
 using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
 
@@ -140,6 +141,8 @@ public partial class MainWindow : FluentWindow
     private void OnTagSettingRequested()
     {
         var hadChanges = _viewModel.HasChanges;
+        // 決定ログ AA-1・AA-5: 設定画面で変えた順位を使い、タグが付いている欄は畳んだ状態で開く
+        _viewModel.Editor.CollapseUpToRank = _libraries.TagCollapseRank;
         var window = new TagSettingWindow(_viewModel.Editor) { Owner = this };
         window.ShowDialog();
         if (!window.Accepted)
@@ -178,25 +181,70 @@ public partial class MainWindow : FluentWindow
         .Select(c => (c.Entry.Id, c.Title, c.FileName))
         .ToList());
 
-    // 決定ログ S-4: つながっていないサブの PDF は開けない(理由を表示する)
-    private async void OpenInViewer(IReadOnlyList<(string Id, string Title, string FileName)> targets)
+    private async void OpenInViewer(IReadOnlyList<(string Id, string Title, string FileName)> targets) => await OpenInViewerAsync(targets);
+
+    // 決定ログ S-4: つながっていないサブの PDF は開けない(理由を表示する)。開けたものの数を返す
+    private async Task<int> OpenInViewerAsync(IReadOnlyList<(string Id, string Title, string FileName)> targets)
     {
         if (targets.Count == 0)
         {
-            return;
+            return 0;
         }
         var paths = await _viewModel.ResolvePdfPathsAsync(targets.Select(t => t.Id).ToList());
         var documents = targets.Where(t => paths.ContainsKey(t.Id)).Select(t => new ViewerDocument(t.Id, t.Title, t.FileName, paths[t.Id])).ToList();
         if (documents.Count == 0)
         {
-            return;
+            return 0;
         }
         if (_viewer is null)
         {
-            _viewer = new ViewerWindow(_viewModel.RecordView);
+            // 決定ログ V-5: ビューアの「前へ」「次へ」は、ここから続きの相手を開く
+            _viewer = new ViewerWindow(_viewModel.RecordView, _viewModel.ChainNeighbors, d => OpenInViewer([(d.Id, d.Title, d.FileName)]));
             _viewer.Closed += (_, _) => _viewer = null;
         }
         _viewer.Open(documents);
+        return documents.Count;
+    }
+
+    // ==== 2 画面比較(F-05、決定ログ W-1) ====
+
+    private async Task CompareAsync((string Id, string Title, string FileName) left, (string Id, string Title, string FileName) right)
+    {
+        if (await OpenInViewerAsync([left, right]) == 2)
+        {
+            _viewer?.Compare(left.Id, right.Id);
+        }
+    }
+
+    // 一覧で 2 件選んで右クリック「並べて比較」
+    private async void OnCompareSelectedClick(object sender, RoutedEventArgs e)
+    {
+        var cards = DocumentList.SelectedItems.Cast<DocumentCard>().ToList();
+        if (cards.Count != 2)
+        {
+            await new WpfUiDialogs(this).ShowErrorAsync("並べて比較するには、一覧で PDF をちょうど 2 件選んでください(Ctrl・Shift で複数選択)。", "並べて比較");
+            return;
+        }
+        await CompareAsync((cards[0].Entry.Id, cards[0].Title, cards[0].FileName), (cards[1].Entry.Id, cards[1].Title, cards[1].FileName));
+    }
+
+    // 版の履歴の「比較」:今選んでいる版と並べる
+    private async void OnCompareVersionClick(object sender, RoutedEventArgs e)
+    {
+        var id = (string?)((FrameworkElement)sender).Tag;
+        var current = _viewModel.Versions.FirstOrDefault(v => v.IsCurrent);
+        if (_viewModel.Versions.FirstOrDefault(v => v.Info.DocumentId == id) is not { } row || current is null)
+        {
+            return;
+        }
+        if (row == current)
+        {
+            await new WpfUiDialogs(this).ShowErrorAsync("今選んでいる版です。比較したいほかの版の「比較」を押してください。", "比較");
+            return;
+        }
+        // 古い版を左、新しい版を右に並べる
+        var (older, newer) = row.Info.VersionNo < current.Info.VersionNo ? (row, current) : (current, row);
+        await CompareAsync((older.Info.DocumentId, older.Info.Title, older.Info.FileName), (newer.Info.DocumentId, newer.Info.Title, newer.Info.FileName));
     }
 
     // ==== 版管理(決定ログ N-1〜N-8) ====
@@ -223,7 +271,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
         var storageId = _viewModel.StorageIdsOf([previous.Id]).GetValueOrDefault(previous.Id);
-        var window = new ImportWindow(_viewModel.DataFolder, [dialog.FileName], previous, _libraries.ShowRegisterAll) { Owner = this };
+        var window = new ImportWindow(_viewModel.DataFolder, [dialog.FileName], previous, _libraries.ShowRegisterAll, _libraries.TagCollapseRank) { Owner = this };
         window.ShowDialog();
         if (window.LastRegisteredId is { } added && storageId is not null)
         {
@@ -249,6 +297,127 @@ public partial class MainWindow : FluentWindow
         if (_viewModel.Versions.FirstOrDefault(v => v.Info.DocumentId == (string?)((FrameworkElement)sender).Tag) is { } row)
         {
             OpenInViewer([(row.Info.DocumentId, row.Info.Title, row.Info.FileName)]);
+        }
+    }
+
+    // ==== 保存した検索(F-16、決定ログ X-3) ====
+
+    private async void OnSaveSearchClick(object sender, RoutedEventArgs e)
+    {
+        var input = new TextInputWindow("検索条件の保存", "名前(例:上野エリアの売上報告)", "") { Owner = this };
+        input.ShowDialog();
+        if (input.Result is { } name)
+        {
+            await _viewModel.SaveSearchAsync(name);
+        }
+    }
+
+    private static SavedSearch? SavedSearchOf(object sender) => (sender as FrameworkElement)?.DataContext as SavedSearch;
+
+    private async void OnApplySavedSearchClick(object sender, RoutedEventArgs e)
+    {
+        if (SavedSearchOf(sender) is { } saved)
+        {
+            await _viewModel.ApplySavedSearchAsync(saved);
+        }
+    }
+
+    private async void OnRenameSavedSearchClick(object sender, RoutedEventArgs e)
+    {
+        if (SavedSearchOf(sender) is not { } saved)
+        {
+            return;
+        }
+        var input = new TextInputWindow("保存した検索の名前の変更", "新しい名前", saved.Name) { Owner = this };
+        input.ShowDialog();
+        if (input.Result is { } name)
+        {
+            await _viewModel.RenameSavedSearchAsync(saved, name);
+        }
+    }
+
+    private async void OnMoveSavedSearchUpClick(object sender, RoutedEventArgs e)
+    {
+        if (SavedSearchOf(sender) is { } saved)
+        {
+            await _viewModel.MoveSavedSearchAsync(saved, -1);
+        }
+    }
+
+    private async void OnMoveSavedSearchDownClick(object sender, RoutedEventArgs e)
+    {
+        if (SavedSearchOf(sender) is { } saved)
+        {
+            await _viewModel.MoveSavedSearchAsync(saved, 1);
+        }
+    }
+
+    private async void OnDeleteSavedSearchClick(object sender, RoutedEventArgs e)
+    {
+        if (SavedSearchOf(sender) is { } saved)
+        {
+            await _viewModel.DeleteSavedSearchAsync(saved);
+        }
+    }
+
+    // ==== 続き・関連(決定ログ V-1〜V-3) ====
+
+    private async Task PickAndLinkAsync(string kind, string title, string guide)
+    {
+        if (!await _viewModel.ResolvePendingChangesAsync() || _viewModel.SingleDetail is not { } current)
+        {
+            return;
+        }
+        var picker = new DocumentPickerWindow(title, guide.Replace("{0}", current.Title), _viewModel.LinkCandidates(forChain: kind != "related")) { Owner = this };
+        picker.ShowDialog();
+        if (picker.Selected is { } selected)
+        {
+            await _viewModel.LinkAsync(kind, selected.Id);
+            SelectDocument(current.Id);
+        }
+    }
+
+    private async void OnLinkPreviousClick(object sender, RoutedEventArgs e) =>
+        await PickAndLinkAsync("previous", "前をつなぐ", "「{0}」の前(前編など)になる PDF を選んでください。すでに別の続きに入っている PDF は出てきません。");
+
+    private async void OnLinkNextClick(object sender, RoutedEventArgs e) =>
+        await PickAndLinkAsync("next", "次をつなぐ", "「{0}」の次(後編など)になる PDF を選んでください。すでに別の続きに入っている PDF は出てきません。");
+
+    private async void OnAddRelatedClick(object sender, RoutedEventArgs e) =>
+        await PickAndLinkAsync("related", "関連を追加", "「{0}」に関連する PDF を選んでください(順番はありません)。");
+
+    private void OnOpenLinkClick(object sender, RoutedEventArgs e)
+    {
+        var id = (string?)((FrameworkElement)sender).Tag;
+        if (_viewModel.ChainRows.Concat(_viewModel.RelatedRows).FirstOrDefault(r => r.Id == id) is { } row)
+        {
+            OpenInViewer([(row.Id, row.Document.Title, row.Document.FileName)]);
+        }
+    }
+
+    private async void OnSelectLinkClick(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is string id && await _viewModel.ResolvePendingChangesAsync())
+        {
+            SelectDocument(id);
+        }
+    }
+
+    private async void OnRemoveChainClick(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is string id && _viewModel.SingleDetail is { } current && await _viewModel.ResolvePendingChangesAsync())
+        {
+            await _viewModel.UnlinkAsync(id, fromChain: true);
+            SelectDocument(current.Id);
+        }
+    }
+
+    private async void OnRemoveRelatedClick(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is string id && _viewModel.SingleDetail is { } current && await _viewModel.ResolvePendingChangesAsync())
+        {
+            await _viewModel.UnlinkAsync(id, fromChain: false);
+            SelectDocument(current.Id);
         }
     }
 
@@ -313,7 +482,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnImportClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFileDialog { Title = "取り込む PDF を選択", Filter = "PDF ファイル (*.pdf)|*.pdf", Multiselect = true };
+        var dialog = new OpenFileDialog { Title = "取り込むファイルを選択", Filter = ViewModels.ImportViewModel.FileDialogFilter, Multiselect = true };
         if (dialog.ShowDialog(this) == true)
         {
             OpenImportWindow(dialog.FileNames);
@@ -327,7 +496,7 @@ public partial class MainWindow : FluentWindow
         {
             return;
         }
-        new ImportWindow(_viewModel.DataFolder, paths, showRegisterAll: _libraries.ShowRegisterAll) { Owner = this }.ShowDialog();
+        new ImportWindow(_viewModel.DataFolder, paths, showRegisterAll: _libraries.ShowRegisterAll, tagCollapseRank: _libraries.TagCollapseRank) { Owner = this }.ShowDialog();
         _viewModel.Refresh();
     }
 

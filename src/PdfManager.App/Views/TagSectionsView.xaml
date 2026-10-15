@@ -5,8 +5,13 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:vm="clr-namespace:PdfManager.App.ViewModels"
+             xmlns:conv="clr-namespace:PdfManager.App.Converters"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:DocumentEditor}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+    </UserControl.Resources>
 
     <!-- タググループごとのタグの欄(決定ログ R-11 ②)。取り込み画面とタグ設定画面で使う(DataContext は DocumentEditor) -->
     <ItemsControl ItemsSource="{Binding TagSections}" AutomationProperties.Name="タグの欄">
@@ -17,60 +22,75 @@
                         <DockPanel>
                             <ui:TextBlock DockPanel.Dock="Right" Text="{Binding RankText}" FontSize="12" VerticalAlignment="Center"
                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            <ui:TextBlock Text="{Binding Title}" FontTypography="BodyStrong" />
+                            <!-- 決定ログ AA-2: 畳める欄は見出しを押して開く・畳む。畳んだときは選んだタグを 1 行で表示する -->
+                            <ui:Button Appearance="Transparent" Padding="0,2" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                       Command="{Binding ToggleCollapsedCommand}" AutomationProperties.Name="{Binding ToggleName}"
+                                       Visibility="{Binding CanCollapse, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="{Binding ToggleSymbol}" Margin="0,0,6,0" />
+                                    <ui:TextBlock Text="{Binding Title}" FontTypography="BodyStrong" />
+                                    <ui:TextBlock Text="{Binding Summary, StringFormat={}:{0}}" TextTrimming="CharacterEllipsis"
+                                                  Visibility="{Binding ShowContent, Converter={StaticResource InverseBoolToVisibility}}" />
+                                </StackPanel>
+                            </ui:Button>
+                            <ui:TextBlock Text="{Binding Title}" FontTypography="BodyStrong"
+                                          Visibility="{Binding CanCollapse, Converter={StaticResource InverseBoolToVisibility}}" />
                         </DockPanel>
-                        <ui:TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Icon="{ui:SymbolIcon Search24}" Margin="0,6,0,4"
-                                    PlaceholderText="検索(Enter で付ける。ないときは新しく作る)" AutomationProperties.Name="{Binding SearchName}">
-                            <ui:TextBox.InputBindings>
-                                <KeyBinding Key="Enter" Command="{Binding EnterCommand}" />
-                            </ui:TextBox.InputBindings>
-                        </ui:TextBox>
-                        <ui:TextBlock Text="{Binding Hint}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"
-                                      Foreground="{DynamicResource TextFillColorSecondaryBrush}">
-                            <ui:TextBlock.Style>
-                                <Style TargetType="ui:TextBlock">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Hint}" Value="">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ui:TextBlock.Style>
-                        </ui:TextBlock>
-                        <ItemsControl ItemsSource="{Binding Choices}" AutomationProperties.Name="{Binding Title}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <!-- 一部の PDF にだけ付いているタグは薄く表示する(決定ログ F-7) -->
-                                    <Border>
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsPartial}" Value="True">
-                                                        <Setter Property="Opacity" Value="0.55" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                        <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,0,2" AutomationProperties.Name="{Binding Name}">
-                                            <StackPanel>
-                                                <ui:TextBlock Text="{Binding Label}" />
-                                                <ui:TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
-                                                    <ui:TextBlock.Style>
-                                                        <Style TargetType="ui:TextBlock">
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding HasDetail}" Value="False">
-                                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </ui:TextBlock.Style>
-                                                </ui:TextBlock>
-                                            </StackPanel>
-                                        </CheckBox>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <StackPanel Visibility="{Binding ShowContent, Converter={StaticResource BoolToVisibility}}">
+                            <ui:TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Icon="{ui:SymbolIcon Search24}" Margin="0,6,0,4"
+                                        Loaded="OnSearchLoaded" Unloaded="OnSearchUnloaded"
+                                        PlaceholderText="検索(Enter で付ける。ないときは新しく作る)" AutomationProperties.Name="{Binding SearchName}">
+                                <ui:TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding EnterCommand}" />
+                                </ui:TextBox.InputBindings>
+                            </ui:TextBox>
+                            <ui:TextBlock Text="{Binding Hint}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"
+                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                <ui:TextBlock.Style>
+                                    <Style TargetType="ui:TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Hint}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:TextBlock.Style>
+                            </ui:TextBlock>
+                            <ItemsControl ItemsSource="{Binding Choices}" AutomationProperties.Name="{Binding Title}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <!-- 一部の PDF にだけ付いているタグは薄く表示する(決定ログ F-7) -->
+                                        <Border>
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsPartial}" Value="True">
+                                                            <Setter Property="Opacity" Value="0.55" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,0,2" AutomationProperties.Name="{Binding Name}">
+                                                <StackPanel>
+                                                    <ui:TextBlock Text="{Binding Label}" />
+                                                    <ui:TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                                        <ui:TextBlock.Style>
+                                                            <Style TargetType="ui:TextBlock">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasDetail}" Value="False">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ui:TextBlock.Style>
+                                                    </ui:TextBlock>
+                                                </StackPanel>
+                                            </CheckBox>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </DataTemplate>

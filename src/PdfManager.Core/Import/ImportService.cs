@@ -2,8 +2,10 @@ using System.Security.Cryptography;
 using PdfManager.Core.Catalog;
 using PdfManager.Core.Database;
 using PdfManager.Core.Documents;
+using PdfManager.Core.Images;
 using PdfManager.Core.Pdf;
 using PdfManager.Core.Storage;
+using PdfManager.Core.Text;
 using UglyToad.PdfPig.Exceptions;
 
 namespace PdfManager.Core.Import;
@@ -48,6 +50,12 @@ public sealed record ImportInput(
     public string? NewVersionOf { get; init; }
 }
 
+// 取り込みで選ばれたもの。画像・ZIP は PDF を作ってから取り込む(F-26、決定ログ Y-1)
+public sealed record CollectedFiles(IReadOnlyList<string> PdfFiles, IReadOnlyList<string> ImageFiles, IReadOnlyList<string> ZipFiles)
+{
+    public bool HasImageSources => ImageFiles.Count > 0 || ZipFiles.Count > 0;
+}
+
 public sealed record RegisteredImport(string? DocumentId, string? Warning, bool WasDuplicate);
 
 public sealed class ImportService(DataFolder dataFolder)
@@ -78,6 +86,18 @@ public sealed class ImportService(DataFolder dataFolder)
             }
         }
         return files.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    // フォルダの中は PDF だけを探す。画像・ZIP は直接選んだものだけを使う
+    public static CollectedFiles CollectFiles(IEnumerable<string> paths)
+    {
+        var list = paths.ToList();
+        List<string> Directly(Func<string, bool> match) => list
+            .Where(p => File.Exists(p) && match(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(NaturalOrder.Instance)
+            .ToList();
+        return new CollectedFiles(CollectPdfFiles(list), Directly(ImageSources.IsImage), Directly(ImageSources.IsZip));
     }
 
     public async Task<PreparedImport> PrepareAsync(string sourcePath, string previewFolder)
@@ -193,6 +213,8 @@ public sealed class ImportService(DataFolder dataFolder)
                 if (input.NewVersionOf is { } baseDocumentId)
                 {
                     new VersionRepository(connection).AddNewestVersion(baseDocumentId, documentId);
+                    // 決定ログ V-7: 前の版の続き・関連を新しい版に引き継ぐ
+                    new LinkRepository(connection).TransferLinks(baseDocumentId, documentId);
                 }
             }
             catch

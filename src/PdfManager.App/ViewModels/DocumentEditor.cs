@@ -55,9 +55,6 @@ public partial class DocumentEditor : ObservableObject
     // 詳細エリアの「タグ設定」が押されたとき
     public event Action? TagSettingRequested;
 
-    // 同じファイル名の警告で、対象以外に比べる文書(取り込み画面では一覧の他の PDF)
-    public Func<IEnumerable<EditableDocument>> OtherDocuments { get; set; } = () => [];
-
     public bool ShowRatingAndMemo { get; }
 
     public IReadOnlyList<EditableDocument> Targets => _targets;
@@ -111,6 +108,18 @@ public partial class DocumentEditor : ObservableObject
 
     // 決定ログ R-11 ②: タググループごとの欄(順位 1・独立 → 順位 2〜5 → 自由タグ)
     public ObservableCollection<TagSection> TagSections { get; } = [];
+
+    // 決定ログ AA-1: タグを選ぶと畳む欄の順位の上限(0 は畳まない。設定画面で PC ごとに決める)
+    public int CollapseUpToRank
+    {
+        get;
+        set
+        {
+            field = value;
+            UpdateCollapsible();
+            ResetCollapsed();
+        }
+    } = Core.Settings.AppSettings.DefaultTagCollapseRank;
 
     // 決定ログ R-11 ④: 付いているタグ(詳細エリアの表示用)
     [ObservableProperty]
@@ -167,7 +176,47 @@ public partial class DocumentEditor : ObservableObject
             TagSections.Add(new TagSection(null, () => RefreshTagChoices(), OnSectionEnterAsync));
         }
         _groups = groups.ToDictionary(g => g.Id);
+        UpdateCollapsible();
         RefreshTagChoices();
+    }
+
+    // 設定の順位以下で、下に次の順位の欄がある欄だけを畳めるようにする(最後の順位・独立・自由タグは畳まない、AA-1)
+    private void UpdateCollapsible()
+    {
+        foreach (var section in TagSections)
+        {
+            section.CanCollapse = section.Group is { Rank: >= 1 } group && group.Rank <= CollapseUpToRank
+                && TagSections.Any(s => s.Group?.Rank == group.Rank + 1);
+            if (!section.CanCollapse)
+            {
+                section.IsCollapsed = false;
+            }
+        }
+    }
+
+    // 決定ログ AA-5: タグが付いている欄は畳んだ状態で始める
+    private void ResetCollapsed()
+    {
+        foreach (var section in TagSections)
+        {
+            section.IsCollapsed = section.CanCollapse && section.Summary.Length > 0;
+        }
+    }
+
+    // 決定ログ AA-1・AA-3・AA-4: タグを付けたら、その欄を畳んで次の順位の欄の検索欄へ
+    private void CollapseAfterSelect(TagSection section)
+    {
+        if (!section.CanCollapse || section.Group is not { } group)
+        {
+            return;
+        }
+        section.IsCollapsed = true;
+        if (TagSections.FirstOrDefault(s => s.Group?.Rank == group.Rank + 1) is { } next)
+        {
+            // 次の欄が畳まれていれば開く(すぐ選べるように)
+            next.IsCollapsed = false;
+            next.RequestFocus();
+        }
     }
 
     public void SetTargets(IReadOnlyList<EditableDocument> targets)
@@ -198,6 +247,7 @@ public partial class DocumentEditor : ObservableObject
                 editor.Load(text, mixed);
             }
             RefreshTagChoices();
+            ResetCollapsed();
         }
         finally
         {
@@ -392,6 +442,7 @@ public partial class DocumentEditor : ObservableObject
         section.Search = "";
         RebuildPrefixOptions();
         RefreshTagChoices();
+        CollapseAfterSelect(section);
     }
 
     private string GroupLabel(long? groupId) => groupId is { } id && _groups.TryGetValue(id, out var group) ? group.Name : "自由タグ";
@@ -415,10 +466,15 @@ public partial class DocumentEditor : ObservableObject
             }
         }
         // 押した欄はそのまま(押した直後に並びが変わらないように)、紐づくタグの欄などを更新する
-        RefreshTagChoices(keep: TagSections.FirstOrDefault(s => s.Choices.Contains(choice)));
+        var section = TagSections.FirstOrDefault(s => s.Choices.Contains(choice));
+        RefreshTagChoices(keep: section);
         RebuildPrefixOptions();
         UpdateFileNamePreview();
         Edited?.Invoke();
+        if (add && section is not null)
+        {
+            CollapseAfterSelect(section);
+        }
     }
 
     private void RefreshTagChoices(TagSection? keep = null)
@@ -433,14 +489,20 @@ public partial class DocumentEditor : ObservableObject
             {
                 RefreshSection(section, all, counts);
             }
-            AssignedTags = TagSections
-                .Select(s => (s.Title, Names: all
+            var lines = TagSections
+                .Select(s => (Section: s, Names: all
                     .Where(t => t.GroupId == s.Group?.Id && counts[t.Key] > 0)
                     .OrderBy(t => t.Key, StringComparer.Ordinal)
                     .Select(t => counts[t.Key] == _targets.Count ? t.Name : $"{t.Name}(一部)")
                     .ToList()))
+                .ToList();
+            foreach (var (section, names) in lines)
+            {
+                section.Summary = string.Join("、", names);
+            }
+            AssignedTags = lines
                 .Where(x => x.Names.Count > 0)
-                .Select(x => new AssignedTagLine(x.Title, string.Join("、", x.Names)))
+                .Select(x => new AssignedTagLine(x.Section.Title, string.Join("、", x.Names)))
                 .ToList();
         }
         finally
@@ -572,19 +634,23 @@ public partial class DocumentEditor : ObservableObject
             CanRebuildFileName = false;
             return;
         }
-        var names = _targets.Select(FileNameFor).ToList();
+        var assigned = AssignNames(_targets);
+        var first = assigned[_targets[0]];
         FileNamePreview = _targets.Count == 1
-            ? $"→ {names[0]}"
-            : $"→ {names[0]} など({_targets.Count} 件それぞれに作られます)";
+            ? $"→ {first.FileName}"
+            : $"→ {first.FileName} など({_targets.Count} 件それぞれに作られます)";
 
         var warnings = new List<string>();
         if (_targets.Any(i => (i.StoredFileName is null || i.FileNameChanged) && ComputeFileName(i).ReplacedInvalidCharacters))
         {
             warnings.Add("ファイル名に使えない文字を「_」に置き換えました。");
         }
-        if (CountSameFileNames(_targets) > 0)
+        // 決定ログ R-10・T-4: 番号が付くときは、付く前から知らせる
+        if (_targets.Any(i => assigned[i].Number > 0))
         {
-            warnings.Add("同じファイル名の PDF があります(保存・登録はできます)。");
+            warnings.Add(_targets.Count == 1
+                ? $"同じファイル名がすでにあるため、タイトルとファイル名の末尾に「_{first.Number}」を付けて{(_targets[0].StoredFileName is null ? "登録" : "保存")}します。"
+                : "同じファイル名がすでにあるものは、タイトルとファイル名の末尾に「_2」などの番号を付けます。");
         }
         CanRebuildFileName = _targets.Any(i => i.StoredFileName is not null && !i.FileNameChanged
             && !string.Equals(i.StoredFileName, ComputeFileName(i).FileName, StringComparison.Ordinal));
@@ -595,19 +661,32 @@ public partial class DocumentEditor : ObservableObject
         FileNameWarning = warnings.Count == 0 ? null : string.Join(" ", warnings);
     }
 
-    // 決定ログ C-7: ライブラリの他の文書や、一緒に保存・登録するものと同じファイル名の件数
-    public int CountSameFileNames(IEnumerable<EditableDocument> items)
+    // 決定ログ R-10・T-6: 「新しい版を追加」では番号を付けない(版は前の版と同じ名前で続ける)
+    public bool NumberDuplicateNames { get; set; } = true;
+
+    // 決定ログ R-10・T-1〜T-5・T-7: 保存・登録するタイトルとファイル名。ライブラリの他の文書や、一緒に保存・登録するものと
+    // ファイル名が同じなら「_2」などを付ける(Number が 0 なら付けない)。登録済みでファイル名を変えていない文書には付けない
+    public Dictionary<EditableDocument, (string Title, string FileName, int Number)> AssignNames(IReadOnlyList<EditableDocument> items)
     {
-        var list = items.ToList();
-        var own = list.Concat(OtherDocuments()).Distinct().ToList();
-        var names = own.Select(FileNameFor).ToList();
-        // 自分自身の今の名前は、ライブラリの「他の文書」から除く
-        var others = new HashSet<string>(_existingFileNames, StringComparer.OrdinalIgnoreCase);
-        foreach (var stored in own.Select(i => i.StoredFileName).OfType<string>())
+        var own = items.Select(i => i.StoredFileName).OfType<string>().Select(UniqueNames.Key).ToHashSet();
+        var taken = _existingFileNames.Select(UniqueNames.Key).Where(k => !own.Contains(k)).ToHashSet();
+        var result = new Dictionary<EditableDocument, (string, string, int)>();
+        foreach (var item in items)
         {
-            others.Remove(stored);
+            var title = TitleFor(item);
+            var fileName = FileNameFor(item);
+            var keepAsIs = !NumberDuplicateNames || (item.StoredFileName is not null && !item.FileNameChanged);
+            if (keepAsIs)
+            {
+                taken.Add(UniqueNames.Key(fileName));
+                result[item] = (title, fileName, 0);
+            }
+            else
+            {
+                result[item] = UniqueNames.Assign(title, fileName, taken);
+            }
         }
-        return list.Select(FileNameFor).Count(n => others.Contains(n) || names.Count(o => string.Equals(o, n, StringComparison.OrdinalIgnoreCase)) > 1);
+        return result;
     }
 
     // ==== 保存・登録の準備 ====
