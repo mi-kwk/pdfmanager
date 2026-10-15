@@ -41,6 +41,13 @@ public sealed record DocumentEntry(
 
     // 保存先(決定ログ S-4、S-6)。null がメイン、文字列がサブライブラリの ID
     public string? StorageId { get; init; }
+
+    // 続き(決定ログ V-4):並びの何番目か / 全体の数。続きがなければ 0
+    public int ChainPosition { get; init; }
+
+    public int ChainLength { get; init; }
+
+    public string ChainText => ChainLength == 0 ? "" : $"続き {ChainPosition}/{ChainLength}";
 }
 
 // 検索(docs/04「検索」、決定ログ I-1〜I-6、L-1〜L-5)。件数が数万件でも一瞬で探せるよう、検索用の文字と条件に使う値をメモリに持つ
@@ -78,6 +85,7 @@ public sealed class DocumentSearchIndex
             (fields.TryGetValue(row.DocumentId, out var list) ? list : fields[row.DocumentId] = []).Add((row.FieldId, row.Name, row.Type, row.Value));
         }
 
+        var chains = LinkRepository.ChainPositions(connection);
         var entries = Query(connection,
             """
             SELECT d.id, d.title, d.file_name, d.created_at, d.page_count, d.memo, d.rating, d.view_count, d.last_viewed_at,
@@ -109,6 +117,8 @@ public sealed class DocumentSearchIndex
                     VersionLabel = r.GetString(11),
                     IsLatest = r.GetBoolean(12),
                     StorageId = r.IsDBNull(13) ? null : r.GetString(13),
+                    ChainPosition = chains.TryGetValue(id, out var chain) ? chain.Position : 0,
+                    ChainLength = chains.TryGetValue(id, out var length) ? length.Length : 0,
                 };
                 // 決定ログ I-2・J-6: タイトル・タグ名・ファイル名・項目の値・メモを対象にする
                 var text = Normalize(string.Join('\n',

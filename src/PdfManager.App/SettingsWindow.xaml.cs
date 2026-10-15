@@ -55,6 +55,7 @@ public partial class SettingsWindow : FluentWindow
         CurrentName.Text = current.Name;
         CurrentFolder.Text = current.RootFolder;
         ShowRegisterAllBox.IsChecked = libraries.ShowRegisterAll;
+        TagCollapseRankBox.SelectedIndex = libraries.TagCollapseRank;
         RefreshRecent();
         Loaded += async (_, _) =>
         {
@@ -147,6 +148,15 @@ public partial class SettingsWindow : FluentWindow
         if (IsLoaded)
         {
             _libraries.SetShowRegisterAll(ShowRegisterAllBox.IsChecked == true);
+        }
+    }
+
+    // 決定ログ AA-1: 項目の並び順がそのまま順位(0 = 畳まない)
+    private void OnTagCollapseRankChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (IsLoaded && TagCollapseRankBox.SelectedIndex >= 0)
+        {
+            _libraries.SetTagCollapseRank(TagCollapseRankBox.SelectedIndex);
         }
     }
 

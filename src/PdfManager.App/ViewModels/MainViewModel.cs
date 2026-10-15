@@ -9,6 +9,7 @@ using PdfManager.Core.Library;
 using PdfManager.Core.Search;
 using PdfManager.Core.Settings;
 using PdfManager.Core.Storage;
+using PdfManager.Core.Text;
 
 namespace PdfManager.App.ViewModels;
 
@@ -38,6 +39,11 @@ public sealed record DocumentCard(DocumentEntry Entry, string ThumbnailPath, str
     public string VersionText => Entry.VersionText;
 
     public bool HasVersion => Entry.SeriesId is not null;
+
+    // 決定ログ V-4: 続きの位置(例:続き 2/3)
+    public string ChainText => Entry.ChainText;
+
+    public bool HasChain => Entry.ChainLength > 0;
 }
 
 // 詳細エリアの「版の履歴」の 1 行(決定ログ N-6)
@@ -46,6 +52,16 @@ public sealed record VersionRow(VersionInfo Info, bool IsCurrent, bool IsLatest)
     public string Text => Info.DisplayName + (IsLatest ? "(最新)" : "");
 
     public string Sub => $"{Info.Title} ・ {Info.CreatedAt.ToLocalTime():yyyy/MM/dd}";
+}
+
+// 詳細エリアの「続き」「関連」の 1 行(決定ログ V-1)
+public sealed record LinkRow(LinkedDocument Document, bool IsCurrent, string Position)
+{
+    public string Id => Document.Id;
+
+    public string Text => Position.Length == 0 ? Document.Title : $"{Position} {Document.Title}";
+
+    public string Sub => $"{Document.FileName} ・ {Document.CreatedAt.ToLocalTime():yyyy/MM/dd}" + (IsCurrent ? "(この PDF)" : "");
 }
 
 // 決定ログ J-7: 編集できない情報
@@ -344,6 +360,290 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    // ==== 保存した検索(F-16、決定ログ X-1〜X-4) ====
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSavedSearches))]
+    public partial IReadOnlyList<SavedSearch> SavedSearches { get; set; } = [];
+
+    public bool HasSavedSearches => SavedSearches.Count > 0;
+
+    private void LoadSavedSearches()
+    {
+        using var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath);
+        SavedSearches = new SavedSearchRepository(connection).GetAll();
+    }
+
+    // 決定ログ X-1: 今の絞り込みの条件(画面に入力した形のまま)
+    private SavedSearchCondition CurrentCondition() => new()
+    {
+        Keywords = SearchText,
+        TagAny = IsTagAny,
+        IncludedTagIds = TagFilters.Where(t => t.State == TagFilterState.Include).Select(t => t.Tag.Id).ToList(),
+        ExcludedTagIds = TagFilters.Where(t => t.State == TagFilterState.Exclude).Select(t => t.Tag.Id).ToList(),
+        UntaggedOnly = UntaggedOnly,
+        Fields = FieldFilters.Where(f => f.HasCondition)
+            .Select(f => new SavedFieldCondition(f.Field.Id, f.Text, f.From, f.To, f.Options.Where(o => o.IsChecked).Select(o => o.Value).ToList()))
+            .ToList(),
+        MinRating = SelectedRatingFilter.MinRating,
+        UnratedOnly = SelectedRatingFilter.UnratedOnly,
+        RegisteredFrom = RegisteredFrom,
+        RegisteredTo = RegisteredTo,
+        LastViewedFrom = LastViewedFrom,
+        LastViewedTo = LastViewedTo,
+        NeverViewedOnly = NeverViewedOnly,
+        IncludeOldVersions = IncludeOldVersions,
+        FilterByStorage = SelectedStorageFilter is { IsAll: false },
+        StorageId = SelectedStorageFilter is { IsAll: false } storage ? storage.StorageId : null,
+    };
+
+    public async Task SaveSearchAsync(string name)
+    {
+        if (!IsFiltering && !await _dialogs.ConfirmAsync("検索条件の保存", "絞り込みの条件がありません(すべての PDF を表示する条件になります)。保存しますか?", "保存する"))
+        {
+            return;
+        }
+        if (await RunSavedSearchAsync(r => r.Add(name, CurrentCondition())))
+        {
+            ShowListMessage("保存した検索", $"今の条件を「{NameNormalizer.Clean(name)}」として保存しました。");
+        }
+    }
+
+    // 決定ログ X-4: 今の条件をすべて置き換える。消えたタグなどは外して知らせる
+    public async Task ApplySavedSearchAsync(SavedSearch saved)
+    {
+        var condition = saved.Condition;
+        var missing = 0;
+        _suspendSearch = true;
+        try
+        {
+            foreach (var tag in TagFilters)
+            {
+                tag.State = TagFilterState.None;
+            }
+            foreach (var field in FieldFilters)
+            {
+                field.Clear();
+            }
+            SearchText = condition.Keywords;
+            IsTagAny = condition.TagAny;
+            var tags = TagFilters.ToDictionary(t => t.Tag.Id);
+            foreach (var (ids, state) in new[] { (condition.IncludedTagIds, TagFilterState.Include), (condition.ExcludedTagIds, TagFilterState.Exclude) })
+            {
+                foreach (var id in ids)
+                {
+                    if (tags.TryGetValue(id, out var tag))
+                    {
+                        tag.State = state;
+                    }
+                    else
+                    {
+                        missing++;
+                    }
+                }
+            }
+            UntaggedOnly = condition.UntaggedOnly;
+            foreach (var savedField in condition.Fields)
+            {
+                if (FieldFilters.FirstOrDefault(f => f.Field.Id == savedField.FieldId) is not { } field)
+                {
+                    missing++;
+                    continue;
+                }
+                field.Text = savedField.Text;
+                field.From = savedField.From;
+                field.To = savedField.To;
+                foreach (var value in savedField.Values)
+                {
+                    if (field.Options.FirstOrDefault(o => o.Value == value) is { } option)
+                    {
+                        option.IsChecked = true;
+                    }
+                    else
+                    {
+                        missing++;
+                    }
+                }
+            }
+            SelectedRatingFilter = RatingChoices.FirstOrDefault(r => r.MinRating == condition.MinRating && r.UnratedOnly == condition.UnratedOnly) ?? RatingChoices[0];
+            RegisteredFrom = condition.RegisteredFrom;
+            RegisteredTo = condition.RegisteredTo;
+            LastViewedFrom = condition.LastViewedFrom;
+            LastViewedTo = condition.LastViewedTo;
+            NeverViewedOnly = condition.NeverViewedOnly;
+            IncludeOldVersions = condition.IncludeOldVersions;
+            var storage = condition.FilterByStorage ? StorageFilters.FirstOrDefault(o => !o.IsAll && o.StorageId == condition.StorageId) : null;
+            if (condition.FilterByStorage && storage is null)
+            {
+                missing++;
+            }
+            SelectedStorageFilter = storage ?? StorageFilters.FirstOrDefault();
+        }
+        finally
+        {
+            _suspendSearch = false;
+        }
+        UpdateOtherTags();
+        ApplySearch();
+        ShowListMessage("保存した検索", $"「{saved.Name}」の条件で絞り込みました。");
+        if (missing > 0)
+        {
+            await _dialogs.ShowErrorAsync($"一部の条件は使えませんでした({missing} 件)。保存したあとで、タグ・補助項目・サブライブラリなどが削除された可能性があります。", "保存した検索");
+        }
+    }
+
+    public Task RenameSavedSearchAsync(SavedSearch saved, string name) => RunSavedSearchAsync(r => r.Rename(saved.Id, name));
+
+    public Task MoveSavedSearchAsync(SavedSearch saved, int offset) => RunSavedSearchAsync(r => r.Move(saved.Id, offset));
+
+    public async Task DeleteSavedSearchAsync(SavedSearch saved)
+    {
+        if (await _dialogs.ConfirmAsync("保存した検索の削除", $"「{saved.Name}」を削除しますか?(PDF は削除されません)", "削除する"))
+        {
+            await RunSavedSearchAsync(r => r.Delete(saved.Id));
+        }
+    }
+
+    private async Task<bool> RunSavedSearchAsync(Action<SavedSearchRepository> action)
+    {
+        try
+        {
+            using (var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath))
+            {
+                action(new SavedSearchRepository(connection));
+            }
+            LoadSavedSearches();
+            return true;
+        }
+        catch (CatalogException ex)
+        {
+            await _dialogs.ShowErrorAsync(ex.Message, "保存した検索");
+            return false;
+        }
+    }
+
+    // ==== 続き・関連(決定ログ V-1〜V-8) ====
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasChain))]
+    public partial IReadOnlyList<LinkRow> ChainRows { get; set; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRelated))]
+    public partial IReadOnlyList<LinkRow> RelatedRows { get; set; } = [];
+
+    public bool HasChain => ChainRows.Count > 0;
+
+    public bool HasRelated => RelatedRows.Count > 0;
+
+    private void LoadLinks(Microsoft.Data.Sqlite.SqliteConnection connection)
+    {
+        if (_detailItems is not [var only])
+        {
+            ChainRows = [];
+            RelatedRows = [];
+            return;
+        }
+        var links = new LinkRepository(connection);
+        var chain = links.GetChain(only.Detail.Id);
+        ChainRows = chain.Select((d, i) => new LinkRow(d, d.Id == only.Detail.Id, $"{i + 1}/{chain.Count}")).ToList();
+        RelatedRows = links.GetRelated(only.Detail.Id).Select(d => new LinkRow(d, false, "")).ToList();
+    }
+
+    // 文書選択の画面の候補(決定ログ V-3)。自分自身と、すでにつながっているものは除く
+    public IReadOnlyList<DocumentEntry> LinkCandidates(bool forChain)
+    {
+        if (_index is null || SingleDetail is not { } current)
+        {
+            return [];
+        }
+        var related = RelatedRows.Select(r => r.Id).ToHashSet();
+        return _index.Search(new SearchQuery { IncludeOldVersions = true })
+            .Where(e => e.Id != current.Id && (forChain ? e.ChainLength == 0 : !related.Contains(e.Id)))
+            .ToList();
+    }
+
+    // kind は "previous"(前をつなぐ)・"next"(次をつなぐ)・"related"(関連を追加)
+    public async Task LinkAsync(string kind, string otherId)
+    {
+        if (SingleDetail is not { } current || !await EnsureEditableAsync([current.Id, otherId], "続き・関連"))
+        {
+            return;
+        }
+        try
+        {
+            await ChangeAsync(AffectedByLinks(current.Id, otherId), connection =>
+            {
+                var links = new LinkRepository(connection);
+                switch (kind)
+                {
+                    case "previous":
+                        links.InsertPrevious(current.Id, otherId);
+                        break;
+                    case "next":
+                        links.InsertNext(current.Id, otherId);
+                        break;
+                    default:
+                        links.AddRelated(current.Id, otherId);
+                        break;
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            await _dialogs.ShowErrorAsync(ex.Message, "続き・関連");
+        }
+        Refresh();
+    }
+
+    // 決定ログ V-1・V-6: 続きから外す(前後をつなぎ直す)/関連から外す
+    public async Task UnlinkAsync(string otherId, bool fromChain)
+    {
+        if (SingleDetail is not { } current)
+        {
+            return;
+        }
+        var row = (fromChain ? ChainRows : RelatedRows).First(r => r.Id == otherId);
+        var message = fromChain
+            ? $"「{row.Document.Title}」を続きから外しますか?\n前後の PDF は、そのままつなぎ直します。"
+            : $"「{row.Document.Title}」を関連から外しますか?";
+        if (!await EnsureEditableAsync([current.Id, otherId], "続き・関連") || !await _dialogs.ConfirmAsync("続き・関連", message, "外す"))
+        {
+            return;
+        }
+        await ChangeAsync(AffectedByLinks(current.Id, otherId), connection =>
+        {
+            var links = new LinkRepository(connection);
+            if (fromChain)
+            {
+                links.RemoveFromChain(otherId);
+            }
+            else
+            {
+                links.RemoveRelated(current.Id, otherId);
+            }
+        });
+        Refresh();
+    }
+
+    // つなぎ方が変わる文書(サブライブラリへの書き込み用):両方と、それぞれの前後
+    private IReadOnlyCollection<string> AffectedByLinks(params string[] ids)
+    {
+        using var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath);
+        var links = new LinkRepository(connection);
+        return ids.Concat(ids.Select(links.PreviousOf)).Concat(ids.Select(links.NextOf)).OfType<string>().Distinct().ToList();
+    }
+
+    // 決定ログ V-5: ビューアの「前へ」「次へ」
+    public (LinkedDocument? Previous, LinkedDocument? Next) ChainNeighbors(string documentId)
+    {
+        using var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath);
+        var links = new LinkRepository(connection);
+        var chain = links.GetChain(documentId).ToList();
+        var index = chain.FindIndex(d => d.Id == documentId);
+        return index < 0 ? (null, null) : (index > 0 ? chain[index - 1] : null, index < chain.Count - 1 ? chain[index + 1] : null);
+    }
+
     // 決定ログ N-8
     public async Task DetachVersionAsync(string documentId)
     {
@@ -379,6 +679,12 @@ public partial class MainViewModel : ObservableObject
         }
         await ChangeAsync(documentIds, connection => new VersionRepository(connection).Group(documentIds));
         Refresh();
+        // 旧版になって一覧から消えたものは選択から外す(詳細エリアに最新版の版の履歴が出るように)
+        var visible = SelectedIds.Where(id => Results.Any(c => c.Entry.Id == id)).ToList();
+        if (visible.Count != SelectedIds.Count)
+        {
+            SetSelection(visible);
+        }
     }
 
     // ==== サブライブラリにある文書の扱い(決定ログ S-4、S-10、S-12) ====
@@ -572,6 +878,7 @@ public partial class MainViewModel : ObservableObject
             _suspendSearch = false;
         }
         UpdateStorageFilters();
+        LoadSavedSearches();
         DocumentCount = _index.Count;
         ApplySearch();
         LoadDetails();
@@ -753,6 +1060,7 @@ public partial class MainViewModel : ObservableObject
             var versions = _detailItems is [var only] ? new VersionRepository(connection).GetVersions(only.Detail.Id) : [];
             Versions = versions.Select(v => new VersionRow(v, v.DocumentId == _detailItems[0].Detail.Id, v == versions[^1])).ToList();
             VersionLabel = Versions.FirstOrDefault(v => v.IsCurrent)?.Info.Label ?? "";
+            LoadLinks(connection);
         }
         _loadingDetails = false;
         HasChanges = false;
@@ -813,13 +1121,8 @@ public partial class MainViewModel : ObservableObject
             await _dialogs.ShowErrorAsync("次の項目の入力を直してから保存してください。\n\n" + string.Join("\n", errors.Take(MaxReportedProblems)));
             return false;
         }
-        var changedNames = items.Where(i => i.FileNameChanged).ToList();
-        var sameNames = changedNames.Count == 0 ? 0 : Editor.CountSameFileNames(changedNames);
-        if (sameNames > 0 && !await _dialogs.ConfirmAsync("同じファイル名があります",
-                $"同じファイル名になる PDF が {sameNames} 件あります。このまま保存しますか?\n(USB へ出力するときは「(2)」などを付けて区別します)", "保存する"))
-        {
-            return false;
-        }
+        // 決定ログ R-10・T-5・T-7: ファイル名を変えて同じ名前になるときは、確認せずに「_2」などを付ける
+        var names = Editor.AssignNames(items.Cast<EditableDocument>().ToList());
 
         var label = VersionLabel;
         var hasVersions = HasVersions;
@@ -831,7 +1134,7 @@ public partial class MainViewModel : ObservableObject
             {
                 var (source, sourceId) = Editor.FileNameSourceFor(item, tagIds);
                 repository.Update(new DocumentUpdate(
-                    item.Detail.Id, DocumentEditor.TitleFor(item), item.Memo, item.Rating, Editor.FileNameFor(item),
+                    item.Detail.Id, names[item].Title, item.Memo, item.Rating, names[item].FileName,
                     source, sourceId, item.UseTitleAsFileName ? "" : item.Suffix, parsed[item],
                     item.TagKeys.Select(k => tagIds[k]).ToList()), DateTimeOffset.UtcNow);
             }
@@ -900,7 +1203,8 @@ public partial class MainViewModel : ObservableObject
         beforeDelete(ids);
         var problems = new List<string>();
         var deleted = 0;
-        await ChangeAsync(ids, _ =>
+        // 決定ログ V-6: 続きの前後をつなぎ直すため、前後の文書もサブへ書き込む対象にする
+        await ChangeAsync(AffectedByLinks([.. ids]), _ =>
         {
             foreach (var target in targets)
             {

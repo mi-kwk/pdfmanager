@@ -84,4 +84,20 @@ public class FieldValuesAndFileNameTests
     {
         Assert.True(RecycleBin.IsAvailableFor(Path.GetTempPath()));
     }
+    // 決定ログ R-10・T-1〜T-3
+    [Fact]
+    public void UniqueNames_AddSameNumberToTitleAndFileName()
+    {
+        var taken = new HashSet<string> { UniqueNames.Key("東京_くりまんじゅう.pdf"), UniqueNames.Key("東京_くりまんじゅう_3.pdf") };
+
+        var second = UniqueNames.Assign("東京_くりまんじゅう", "東京_くりまんじゅう.pdf", taken);
+        var third = UniqueNames.Assign("東京_くりまんじゅう", "東京_くりまんじゅう.pdf", taken);
+        var widthAndCase = UniqueNames.Assign("ABC報告", "ＡＢＣ報告.PDF", new HashSet<string> { UniqueNames.Key("abc報告.pdf") });
+        var otherSpelling = UniqueNames.Assign("東京_栗まんじゅう", "東京_栗まんじゅう.pdf", taken);
+
+        Assert.Equal(("東京_くりまんじゅう_2", "東京_くりまんじゅう_2.pdf", 2), second);
+        Assert.Equal(("東京_くりまんじゅう_4", "東京_くりまんじゅう_4.pdf", 4), third);
+        Assert.Equal(("ABC報告_2", "ＡＢＣ報告_2.PDF", 2), widthAndCase);
+        Assert.Equal(("東京_栗まんじゅう", "東京_栗まんじゅう.pdf", 0), otherSpelling);
+    }
 }

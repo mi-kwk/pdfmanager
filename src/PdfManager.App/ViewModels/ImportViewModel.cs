@@ -8,6 +8,7 @@ using PdfManager.App.Services;
 using PdfManager.Core.Catalog;
 using PdfManager.Core.Database;
 using PdfManager.Core.Documents;
+using PdfManager.Core.Images;
 using PdfManager.Core.Import;
 using PdfManager.Core.Storage;
 using Wpf.Ui.Controls;
@@ -31,15 +32,16 @@ public partial class ImportViewModel : ObservableObject, IDisposable
     private readonly DocumentDetail? _newVersionOf;
 
     // newVersionOf を渡すと、その文書の新しい版として 1 件だけ登録する(決定ログ N-1①、N-2)。
-    // showRegisterAll は「すべて登録」ボタンを表示するか(設定画面で切り替える、決定ログ R-5)
-    public ImportViewModel(DataFolder dataFolder, IUserDialogs dialogs, IEnumerable<string> paths, DocumentDetail? newVersionOf = null, bool showRegisterAll = false)
+    // showRegisterAll は「すべて登録」ボタンを表示するか(設定画面で切り替える、決定ログ R-5)。tagCollapseRank はタグを選んだら畳む欄の順位(決定ログ AA-1)
+    public ImportViewModel(DataFolder dataFolder, IUserDialogs dialogs, IEnumerable<string> paths, DocumentDetail? newVersionOf = null, bool showRegisterAll = false, int tagCollapseRank = PdfManager.Core.Settings.AppSettings.DefaultTagCollapseRank)
     {
         _newVersionOf = newVersionOf;
         _dataFolder = dataFolder;
         _service = new ImportService(dataFolder);
         _dialogs = dialogs;
         ShowRegisterAll = showRegisterAll;
-        Editor = new DocumentEditor(dialogs, showRatingAndMemo: false) { OtherDocuments = () => Items.Where(i => i.IsRegistrable) };
+        // 決定ログ R-10・T-6: 新しい版は前の版と同じ名前で続けるため、番号を付けない
+        Editor = new DocumentEditor(dialogs, showRatingAndMemo: false) { NumberDuplicateNames = newVersionOf is null, CollapseUpToRank = tagCollapseRank };
         Directory.CreateDirectory(_previewFolder);
         _lastInput = LastImportInput.Load(dataFolder);
         Items.CollectionChanged += (_, e) =>
@@ -51,8 +53,17 @@ public partial class ImportViewModel : ObservableObject, IDisposable
             NotifyCounts();
         };
         LoadCatalog();
-        AddFiles(paths);
+        _initialPaths = paths.ToList();
     }
+
+    private readonly List<string> _initialPaths;
+
+    // 画面が表示されてから、渡されたファイルを一覧に入れる(画像・ZIP があれば「画像から PDF 作成」の画面を開くため)。
+    // 画像から PDF を作る画面をキャンセルして何も入らなかったときは false
+    public bool AddInitialFiles() => AddFiles(_initialPaths);
+
+    // 画像・ZIP から PDF を作る画面を開く(画像, ZIP, 作業フォルダ)。キャンセルしたときは空を返す(F-26、決定ログ Y-1)
+    public Func<IReadOnlyList<string>, IReadOnlyList<string>, string, IReadOnlyList<CreatedPdf>>? CreatePdfsFromImages { get; set; }
 
     // 「取り込まない」を切り替えたとき(決定ログ R-4)
     private void OnItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -107,7 +118,8 @@ public partial class ImportViewModel : ObservableObject, IDisposable
     public partial ImportItem? PrimarySelection { get; set; }
 
     [ObservableProperty]
-    public partial bool DeleteOriginals { get; set; }
+    // 決定ログ Z-2: 初めからオン(G-1 の「毎回『残す』に戻す」を改めた)
+    public partial bool DeleteOriginals { get; set; } = true;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RegisterSelectedCommand), nameof(RegisterAllCommand))]
@@ -136,32 +148,48 @@ public partial class ImportViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void SelectFilesToAdd()
     {
-        var dialog = new OpenFileDialog { Title = "取り込む PDF を選択", Filter = "PDF ファイル (*.pdf)|*.pdf", Multiselect = true };
+        var dialog = new OpenFileDialog { Title = "取り込むファイルを選択", Filter = FileDialogFilter, Multiselect = true };
         if (dialog.ShowDialog() == true)
         {
             AddFiles(dialog.FileNames);
         }
     }
 
-    public void AddFiles(IEnumerable<string> paths)
+    // 決定ログ Y-1: 画像・ZIP も選べる
+    public static string FileDialogFilter =>
+        "PDF・画像・ZIP|*.pdf;*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff;*.zip|PDF ファイル (*.pdf)|*.pdf|" + ImageSources.DialogFilter;
+
+    // 画像から PDF を作る画面をキャンセルして何も入らなかったときは false
+    public bool AddFiles(IEnumerable<string> paths)
     {
-        var files = ImportService.CollectPdfFiles(paths);
+        var collected = ImportService.CollectFiles(paths);
+        var files = collected.PdfFiles.Select(f => new CreatedPdf(f, [])).ToList();
+        if (collected.HasImageSources && CreatePdfsFromImages is { } create)
+        {
+            files.AddRange(create(collected.ImageFiles, collected.ZipFiles, _previewFolder));
+            if (files.Count == 0)
+            {
+                return false;
+            }
+        }
         if (files.Count == 0)
         {
-            ShowResult(InfoBarSeverity.Warning, "追加できるファイルがありません", "PDF ファイルが見つかりませんでした。");
-            return;
+            ShowResult(InfoBarSeverity.Warning, "追加できるファイルがありません", "PDF・画像・ZIP ファイルが見つかりませんでした。");
+            return true;
         }
         if (IsNewVersionMode && (Items.Count > 0 || files.Count > 1))
         {
             ShowResult(InfoBarSeverity.Informational, "新しい版は 1 件ずつ登録します", "最初の 1 件だけを使います。");
             files = Items.Count > 0 ? [] : files.Take(1).ToList();
         }
-        foreach (var path in files.Where(f => Items.All(i => !string.Equals(i.SourcePath, f, StringComparison.OrdinalIgnoreCase))))
+        foreach (var file in files.Where(f => Items.All(i => !string.Equals(i.SourcePath, f.Path, StringComparison.OrdinalIgnoreCase))))
         {
-            Items.Add(new ImportItem(path));
+            // 決定ログ Z-1: ファイル名は初めから「タイトルと同じにする」
+            Items.Add(new ImportItem(file.Path) { UseTitleAsFileName = true, OriginalSources = file.OriginalSources });
         }
         PrimarySelection ??= Items.FirstOrDefault();
         _ = PrepareQueuedAsync();
+        return true;
     }
 
     private async Task PrepareQueuedAsync()
@@ -322,13 +350,9 @@ public partial class ImportViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var sameNames = Editor.CountSameFileNames(targets);
-        if (sameNames > 0 && !await _dialogs.ConfirmAsync("同じファイル名があります",
-                $"同じファイル名になる PDF が {sameNames} 件あります。このまま登録しますか?\n(USB へ出力するときは「(2)」などを付けて区別します)", "登録する"))
-        {
-            return;
-        }
-        if (DeleteOriginals && targets.Any(t => !RecycleBin.IsAvailableFor(t.SourcePath))
+        // 決定ログ R-10・T-4・T-7: 同じファイル名があれば確認せずに「_2」などを付ける(一緒に登録するものどうしも)
+        var names = Editor.AssignNames(targets.Cast<EditableDocument>().ToList());
+        if (DeleteOriginals && targets.SelectMany(t => t.Originals).Any(p => !RecycleBin.IsAvailableFor(p))
             && !await _dialogs.ConfirmAsync("元のファイルが完全に削除されます",
                 "USB メモリなど、ごみ箱が使えない場所にある元のファイルがあります。登録後、それらは完全に削除され、元に戻せません。続けますか?", "登録して削除する"))
         {
@@ -351,7 +375,7 @@ public partial class ImportViewModel : ObservableObject, IDisposable
                 try
                 {
                     var (source, sourceId) = Editor.FileNameSourceFor(item, tagIds);
-                    var input = new ImportInput(DocumentEditor.TitleFor(item), Editor.FileNameFor(item), source, sourceId,
+                    var input = new ImportInput(names[item].Title, names[item].FileName, source, sourceId,
                         item.UseTitleAsFileName ? "" : item.Suffix, parsedValues[item], item.TagKeys.Select(k => tagIds[k]).ToList())
                     {
                         Memo = item.Memo,
@@ -378,7 +402,12 @@ public partial class ImportViewModel : ObservableObject, IDisposable
                     }
                     if (DeleteOriginals)
                     {
-                        DeleteOriginal(item.SourcePath, problems);
+                        // 画像・ZIP から作った PDF は、元の画像・ZIP をごみ箱へ(決定ログ Y-5)。
+                        // 同じ ZIP から作ってまだ登録していない PDF が残っているときは、全部登録するまで残す
+                        foreach (var original in item.Originals.Where(o => !Items.Any(i => i.Originals.Contains(o, StringComparer.OrdinalIgnoreCase))))
+                        {
+                            DeleteOriginal(original, problems);
+                        }
                     }
                 }
                 catch (Exception ex)

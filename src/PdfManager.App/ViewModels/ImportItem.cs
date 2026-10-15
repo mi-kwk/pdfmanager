@@ -19,6 +19,12 @@ public partial class ImportItem(string sourcePath) : EditableDocument
 {
     public string SourcePath { get; } = sourcePath;
 
+    // 画像・ZIP から作った PDF のとき、元の画像・ZIP(登録後にごみ箱へ移すもの、決定ログ Y-5)。空なら SourcePath
+    public IReadOnlyList<string> OriginalSources { get; init; } = [];
+
+    // 登録後にごみ箱へ移すファイル
+    public IReadOnlyList<string> Originals => OriginalSources.Count > 0 ? OriginalSources : [SourcePath];
+
     public override string DisplayName => Path.GetFileName(SourcePath);
 
     public override string OriginalFileName => DisplayName;

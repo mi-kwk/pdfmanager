@@ -15,13 +15,30 @@ public partial class ImportWindow : FluentWindow
     private readonly IUserDialogs _dialogs;
     private bool _closeConfirmed;
 
-    public ImportWindow(DataFolder dataFolder, IEnumerable<string> paths, PdfManager.Core.Documents.DocumentDetail? newVersionOf = null, bool showRegisterAll = false)
+    public ImportWindow(DataFolder dataFolder, IEnumerable<string> paths, PdfManager.Core.Documents.DocumentDetail? newVersionOf = null, bool showRegisterAll = false,
+        int tagCollapseRank = PdfManager.Core.Settings.AppSettings.DefaultTagCollapseRank)
     {
         InitializeComponent();
         WindowPlacement.KeepOnScreen(this);
         _dialogs = new WpfUiDialogs(this);
-        _viewModel = new ImportViewModel(dataFolder, _dialogs, paths, newVersionOf, showRegisterAll);
+        _viewModel = new ImportViewModel(dataFolder, _dialogs, paths, newVersionOf, showRegisterAll, tagCollapseRank);
         DataContext = _viewModel;
+        // 決定ログ Y-1: 画像・ZIP は「画像から PDF 作成」の画面で PDF にしてから一覧に入れる
+        _viewModel.CreatePdfsFromImages = (images, zips, workFolder) =>
+        {
+            var window = new ImagePdfWindow(images, zips, workFolder) { Owner = this };
+            window.ShowDialog();
+            return window.Created;
+        };
+        // 画面が表示されてから一覧に入れる(「画像から PDF 作成」の画面をこの画面の上に開くため)
+        ContentRendered += (_, _) =>
+        {
+            if (!_viewModel.AddInitialFiles())
+            {
+                // 画像から PDF を作るのをやめて、取り込むものがなくなった
+                Dispatcher.BeginInvoke(Close);
+            }
+        };
         SystemThemeWatcher.Watch(this);
         Closing += OnClosing;
         Closed += (_, _) => _viewModel.Dispose();

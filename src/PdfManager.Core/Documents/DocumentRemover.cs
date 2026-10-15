@@ -42,6 +42,8 @@ public sealed class DocumentRemover(DataFolder dataFolder, Action<string>? dispo
         }
 
         using var connection = PdfManagerDatabase.Open(dataFolder.DatabasePath);
+        // 決定ログ V-6: 続きの途中なら、前と次をつなぎ直してから消す(関連は一緒に消える)
+        new LinkRepository(connection).RemoveFromChain(documentId);
         new DocumentRepository(connection).Delete(documentId);
         // 決定ログ N-7: 残った版はそのまま(1 つ前の版が最新版になる)。空になった版系列だけ消す
         new VersionRepository(connection).DeleteEmptySeries();

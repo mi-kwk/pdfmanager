@@ -85,6 +85,15 @@ public sealed class LibraryActions(AppSettingsStore store)
         store.Save(Settings);
     }
 
+    // 決定ログ AA-1: タグの欄を畳む順位(0 は畳まない)
+    public int TagCollapseRank => Math.Clamp(Settings.TagCollapseRank, 0, AppSettings.MaxTagCollapseRank);
+
+    public void SetTagCollapseRank(int value)
+    {
+        Settings = Settings with { TagCollapseRank = Math.Clamp(value, 0, AppSettings.MaxTagCollapseRank) };
+        store.Save(Settings);
+    }
+
     public void Forget(string libraryFilePath)
     {
         Settings = AppSettingsStore.Forget(Settings, libraryFilePath);
