@@ -1110,39 +1110,19 @@ public partial class MainViewModel : ObservableObject
     private async Task<bool> SaveChangesAsync()
     {
         var items = _detailItems.ToList();
-        if (!await EnsureEditableAsync(items.Select(i => i.Detail.Id), "保存できません"))
-        {
-            return false;
-        }
-        var parsed = new Dictionary<EditableDocument, Dictionary<long, FieldValue>>();
-        var errors = Editor.ParseFieldValues(items, parsed);
-        if (errors.Count > 0)
-        {
-            await _dialogs.ShowErrorAsync("次の項目の入力を直してから保存してください。\n\n" + string.Join("\n", errors.Take(MaxReportedProblems)));
-            return false;
-        }
-        // 決定ログ R-10・T-5・T-7: ファイル名を変えて同じ名前になるときは、確認せずに「_2」などを付ける
-        var names = Editor.AssignNames(items.Cast<EditableDocument>().ToList());
-
         var label = VersionLabel;
         var hasVersions = HasVersions;
-        await ChangeAsync(items.Select(i => i.Detail.Id).ToList(), connection =>
+        var saved = await DetailSaver.SaveAsync(DataFolder, _storage, _dialogs, Editor, items, connection =>
         {
-            var tagIds = Editor.ResolveTagIds(new CatalogRepository(connection), items.SelectMany(i => i.TagKeys));
-            var repository = new DocumentRepository(connection);
-            foreach (var item in items)
-            {
-                var (source, sourceId) = Editor.FileNameSourceFor(item, tagIds);
-                repository.Update(new DocumentUpdate(
-                    item.Detail.Id, names[item].Title, item.Memo, item.Rating, names[item].FileName,
-                    source, sourceId, item.UseTitleAsFileName ? "" : item.Suffix, parsed[item],
-                    item.TagKeys.Select(k => tagIds[k]).ToList()), DateTimeOffset.UtcNow);
-            }
             if (items is [var single] && hasVersions)
             {
                 new VersionRepository(connection).SetLabel(single.Detail.Id, label);
             }
         });
+        if (!saved)
+        {
+            return false;
+        }
         HasChanges = false;
         Refresh();
         SaveMessage = items.Count == 1 ? "保存しました。" : $"{items.Count} 件を保存しました。";
