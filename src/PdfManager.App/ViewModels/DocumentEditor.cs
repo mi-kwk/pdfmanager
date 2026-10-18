@@ -221,6 +221,14 @@ public partial class DocumentEditor : ObservableObject
 
     public void SetTargets(IReadOnlyList<EditableDocument> targets)
     {
+        // 対象が変わったら、タグの欄の検索の文字を消す(前の PDF の検索で候補が絞られたままにならないように)
+        if (!targets.SequenceEqual(_targets))
+        {
+            foreach (var section in TagSections)
+            {
+                section.ResetSearch();
+            }
+        }
         _targets = targets;
         Reload();
     }

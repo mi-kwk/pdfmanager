@@ -348,6 +348,13 @@
                        Click="OnImportClick"
                        ToolTip="PDF を選んで取り込みます(ファイルやフォルダを画面にドラッグ&amp;ドロップしても取り込めます)"
                        Margin="0,0,8,0" />
+            <!-- 決定ログ BC-1: タグの付け漏れを探して直す画面 -->
+            <ui:Button Content="付け漏れ確認"
+                       Icon="{ui:SymbolIcon TagSearch24}"
+                       Click="OnTagGapClick"
+                       ToolTip="タグが付いていない PDF や、紐づくタグが付いていない PDF を探して直します"
+                       AutomationProperties.Name="付け漏れ確認"
+                       Margin="0,0,8,0" />
             <ui:Button Content="項目・タグ"
                        Icon="{ui:SymbolIcon Tag24}"
                        Click="OnManageCatalogClick"

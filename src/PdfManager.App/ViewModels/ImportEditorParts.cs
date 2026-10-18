@@ -32,7 +32,23 @@ public sealed partial class TagSection(TagGroup? group, Action onSearchChanged, 
     [ObservableProperty]
     public partial string Hint { get; set; } = "";
 
-    partial void OnSearchChanged(string value) => onSearchChanged();
+    private bool _resettingSearch;
+
+    partial void OnSearchChanged(string value)
+    {
+        if (!_resettingSearch)
+        {
+            onSearchChanged();
+        }
+    }
+
+    // 別の PDF に移ったとき、前の PDF で入力した検索の文字を消す(候補は呼び出し側で表示し直す)
+    public void ResetSearch()
+    {
+        _resettingSearch = true;
+        Search = "";
+        _resettingSearch = false;
+    }
 
     // 決定ログ Q-12: 検索欄で Enter を押すと、見つかればそのタグを付け、なければこのグループに新しく作って付ける
     [RelayCommand]

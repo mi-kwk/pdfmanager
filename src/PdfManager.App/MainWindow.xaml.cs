@@ -500,6 +500,18 @@ public partial class MainWindow : FluentWindow
         _viewModel.Refresh();
     }
 
+    // 決定ログ BC-1: タグの付け漏れ確認。閉じたら一覧と件数を読み直す
+    private async void OnTagGapClick(object sender, RoutedEventArgs e)
+    {
+        if (!await _viewModel.ResolvePendingChangesAsync())
+        {
+            return;
+        }
+        var ids = _viewModel.Results.Select(c => c.Entry.Id).ToList();
+        new TagGapWindow(_viewModel.DataFolder, _storage, ids, _libraries.TagCollapseRank) { Owner = this }.ShowDialog();
+        _viewModel.Refresh();
+    }
+
     private async void OnSettingsClick(object sender, RoutedEventArgs e)
     {
         if (!await _viewModel.ResolvePendingChangesAsync())
