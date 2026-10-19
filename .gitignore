@@ -264,6 +264,8 @@ Generated_Code/
 # because we have git ;-)
 _UpgradeReport_Files/
 Backup*/
+# ソースのバックアップ機能のフォルダは対象外にしない(上の Backup*/ は Visual Studio の移行時のバックアップ用)
+!src/PdfManager.Core/Backup/
 UpgradeLog*.XML
 UpgradeLog*.htm
 ServiceFabricBackup/
