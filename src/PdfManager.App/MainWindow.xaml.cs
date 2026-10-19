@@ -65,6 +65,8 @@ public partial class MainWindow : FluentWindow
         InputBindings.Add(new KeyBinding(new RelayCommand(() => SearchBox.Focus()), Key.F, ModifierKeys.Control));
         SystemThemeWatcher.Watch(this);
         Closing += OnClosing;
+        // 決定ログ BB-5: 前回のバックアップから日数がたっていたら知らせる(画面が出てから)
+        ContentRendered += async (_, _) => await BackupActions.RemindIfDueAsync(this, _libraries, _storage, (int)_viewModel.DocumentCount);
         // ライブラリを切り替えたときや終了したときは、ビューアも閉じる(決定ログ K-6)
         Closed += (_, _) =>
         {

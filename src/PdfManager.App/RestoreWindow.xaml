@@ -1,0 +1,57 @@
+<ui:FluentWindow x:Class="PdfManager.App.RestoreWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="バックアップから戻す"
+                 Width="640" Height="620" MinWidth="480" MinHeight="460"
+                 WindowStartupLocation="CenterOwner"
+                 ShowInTaskbar="False"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="バックアップから戻す" ShowMinimize="False" ShowMaximize="False" />
+
+        <StackPanel Grid.Row="1" Margin="20,0,20,8">
+            <ui:TextBlock Text="戻すライブラリ" FontTypography="BodyStrong" Margin="0,0,0,4" />
+            <ComboBox x:Name="LibraryChoice" DisplayMemberPath="LibraryName" SelectionChanged="OnLibraryChanged" AutomationProperties.Name="戻すライブラリ" />
+            <ui:TextBlock Text="いつの状態に戻すか" FontTypography="BodyStrong" Margin="0,12,0,4" />
+        </StackPanel>
+
+        <ListBox Grid.Row="2" x:Name="GenerationList" Margin="20,0,20,0" AutomationProperties.Name="いつの状態に戻すか"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="0,2">
+                        <ui:TextBlock Text="{Binding Title}" FontTypography="BodyStrong" />
+                        <ui:TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel Grid.Row="3" Margin="20,12,20,0">
+            <ui:TextBlock Text="戻す先のフォルダ(空のフォルダ)" FontTypography="BodyStrong" Margin="0,0,0,4" />
+            <DockPanel>
+                <ui:Button DockPanel.Dock="Right" Content="選ぶ" Icon="{ui:SymbolIcon FolderOpen24}" Margin="8,0,0,0" Click="OnChooseDestinationClick" />
+                <ui:TextBox x:Name="DestinationBox" PlaceholderText="例:D:\業務\戻したライブラリ" AutomationProperties.Name="戻す先のフォルダ" />
+            </DockPanel>
+            <ui:TextBlock TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                          Text="選んだフォルダの中に、メインを「PdfManager」、サブライブラリを「サブライブラリ」フォルダの中に作ります。今のライブラリとバックアップには手を加えません。戻したあとは、そのライブラリを開いて確かめられます。" />
+        </StackPanel>
+
+        <DockPanel Grid.Row="4" Margin="20,12,20,16">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <ui:Button Content="キャンセル" IsCancel="True" Click="OnCancelClick" Margin="0,0,8,0" />
+                <ui:Button Content="戻す" Appearance="Primary" Icon="{ui:SymbolIcon ArrowUndo24}" Click="OnRestoreClick" AutomationProperties.Name="戻す" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>
