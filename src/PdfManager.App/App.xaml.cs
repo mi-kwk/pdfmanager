@@ -30,6 +30,12 @@ public partial class App : Application
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         try
         {
+            // 決定ログ BD-1・BD-2: すでに動いていれば、その画面を前に出して終わる
+            if (!await SingleInstance.EnsureAsync(new WpfUiDialogs(null)))
+            {
+                Shutdown();
+                return;
+            }
             _libraries = new LibraryActions(new AppSettingsStore(ArgValue(e.Args, "--settings") ?? AppSettingsStore.DefaultDirectory));
             var library = await OpenInitialAsync(ArgValue(e.Args, "--library")) ?? ShowWelcome();
             if (library is null)
@@ -56,8 +62,29 @@ public partial class App : Application
         var previous = MainWindow;
         var window = new MainWindow(library, _libraries);
         MainWindow = window;
+        // 決定ログ BD-3: メイン画面を閉じたら、確実にアプリを終える
+        window.Closed += (_, _) =>
+        {
+            if (MainWindow == window)
+            {
+                Shutdown();
+            }
+        };
         window.Show();
         previous?.Close();
+    }
+
+    // 決定ログ BD-3: 終わる処理のあと、何かが残って 10 秒たっても終わらなければ、強制的に終える(exe の置き換えを妨げないため)
+    protected override void OnExit(ExitEventArgs e)
+    {
+        base.OnExit(e);
+        var exitCode = e.ApplicationExitCode;
+        new Thread(() =>
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(10));
+            Environment.Exit(exitCode);
+        })
+        { IsBackground = true, Name = "ExitWatchdog" }.Start();
     }
 
     // 前回のライブラリ(または --library)を開く。開けなければ理由を表示して null を返す
