@@ -3,7 +3,7 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="設定"
-                 Width="820" Height="820" MinWidth="640" MinHeight="600"
+                 Width="900" Height="860" MinWidth="720" MinHeight="620"
                  WindowStartupLocation="CenterOwner"
                  ShowInTaskbar="False"
                  ExtendsContentIntoTitleBar="True"
@@ -26,7 +26,9 @@
         </Grid.RowDefinitions>
         <ui:TitleBar Grid.Row="0" Title="設定" ShowMinimize="False" ShowMaximize="False" />
 
-        <Grid Grid.Row="1" Margin="16,0,16,16">
+        <!-- 画面に収まらないときはスクロールする(大きいときは、サブライブラリと最近使ったライブラリの欄が広がる) -->
+        <ScrollViewer Grid.Row="1" x:Name="ContentScroll" Margin="16,0,16,16" VerticalScrollBarVisibility="Auto">
+        <Grid MinHeight="940" Height="{Binding ViewportHeight, ElementName=ContentScroll}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="3*" MinHeight="200" />
@@ -135,8 +137,14 @@
                 </DockPanel>
             </Border>
 
-            <!-- この PC での取り込み画面の設定(決定ログ R-5) -->
-            <Border Grid.Row="3" Style="{StaticResource PaneBorder}" Margin="0,12,0,0">
+            <!-- この PC での設定:取り込み画面(決定ログ R-5、AA-1)とバックアップ(決定ログ BB-1〜BB-7) -->
+            <Grid Grid.Row="3" Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
                 <StackPanel>
                     <ui:TextBlock Text="取り込み画面(この PC の設定)" FontTypography="BodyStrong" Margin="0,0,0,4" />
                     <CheckBox x:Name="ShowRegisterAllBox" Content="「すべて登録」ボタンも表示する"
@@ -160,6 +168,42 @@
                                   TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Border>
+            <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
+                <StackPanel>
+                    <ui:TextBlock Text="バックアップ(この PC の設定)" FontTypography="BodyStrong" Margin="0,0,0,4" />
+                    <ui:TextBlock x:Name="BackupFolderText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                  AutomationProperties.AutomationId="BackupFolder" />
+                    <ui:TextBlock x:Name="BackupLastText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                  Margin="0,2,0,8" AutomationProperties.AutomationId="BackupLast" />
+                    <WrapPanel>
+                        <ui:Button Content="今すぐバックアップ" Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Click="OnBackupClick" Margin="0,0,8,8"
+                                   AutomationProperties.Name="今すぐバックアップ" />
+                        <ui:Button Content="保存先を選ぶ" Icon="{ui:SymbolIcon FolderOpen24}" Click="OnChooseBackupFolderClick" Margin="0,0,8,8"
+                                   AutomationProperties.Name="バックアップの保存先を選ぶ" />
+                        <ui:Button Content="バックアップから戻す" Icon="{ui:SymbolIcon ArrowUndo24}" Click="OnRestoreClick" Margin="0,0,8,8"
+                                   AutomationProperties.Name="バックアップから戻す" />
+                    </WrapPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <ui:TextBlock Text="古い回を残す数" VerticalAlignment="Center" Margin="0,0,8,0" Width="110" />
+                        <ui:NumberBox x:Name="KeepOldBox" Minimum="0" Maximum="30" SmallChange="1" MaxDecimalPlaces="0" Width="140"
+                                      ValueChanged="OnKeepOldChanged" AutomationProperties.Name="古い回を残す数" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <ui:TextBlock Text="起動時に知らせる" VerticalAlignment="Center" Margin="0,0,8,0" Width="110" />
+                        <ComboBox x:Name="ReminderBox" MinWidth="140" SelectionChanged="OnReminderChanged" AutomationProperties.Name="起動時に知らせる">
+                            <ComboBoxItem Content="知らせない" Tag="0" />
+                            <ComboBoxItem Content="3 日たったら" Tag="3" />
+                            <ComboBoxItem Content="7 日たったら" Tag="7" />
+                            <ComboBoxItem Content="14 日たったら" Tag="14" />
+                            <ComboBoxItem Content="30 日たったら" Tag="30" />
+                        </ComboBox>
+                    </StackPanel>
+                    <ui:TextBlock TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                  Text="2 回目からは増えた PDF だけをコピーします。文書の情報は、最新の回に加えて「古い回を残す数」だけ残します(0 なら最新の 1 回分だけ)。どの回にも載っていない PDF はバックアップから消します(ライブラリの PDF には触りません)。" />
+                </StackPanel>
+            </Border>
+            </Grid>
         </Grid>
+        </ScrollViewer>
     </Grid>
 </ui:FluentWindow>

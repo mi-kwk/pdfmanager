@@ -56,6 +56,7 @@ public partial class SettingsWindow : FluentWindow
         CurrentFolder.Text = current.RootFolder;
         ShowRegisterAllBox.IsChecked = libraries.ShowRegisterAll;
         TagCollapseRankBox.SelectedIndex = libraries.TagCollapseRank;
+        LoadBackup();
         RefreshRecent();
         Loaded += async (_, _) =>
         {
@@ -148,6 +149,108 @@ public partial class SettingsWindow : FluentWindow
         if (IsLoaded)
         {
             _libraries.SetShowRegisterAll(ShowRegisterAllBox.IsChecked == true);
+        }
+    }
+
+    // ==== バックアップ(決定ログ BB-1〜BB-7) ====
+
+    private void LoadBackup()
+    {
+        var backup = _libraries.Backup;
+        BackupFolderText.Text = backup.Folder is null ? "保存先:まだ選んでいません(外付け HDD などを選んでください)" : $"保存先:{backup.Folder}";
+        BackupLastText.Text = BackupActions.LastText(_libraries, _current);
+        KeepOldBox.Value = backup.KeepOldGenerations;
+        ReminderBox.SelectedItem = ReminderBox.Items.Cast<System.Windows.Controls.ComboBoxItem>()
+            .FirstOrDefault(i => (string)i.Tag == backup.ReminderDays.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            ?? ReminderBox.Items[2];
+    }
+
+    private async void OnBackupClick(object sender, RoutedEventArgs e)
+    {
+        await BackupActions.RunAsync(this, _libraries, _storage);
+        LoadBackup();
+    }
+
+    private async void OnChooseBackupFolderClick(object sender, RoutedEventArgs e)
+    {
+        if (BackupActions.ChooseFolder(this, _libraries.Backup.Folder) is not { } folder)
+        {
+            return;
+        }
+        if (LibraryService.IsSameOrUnder(folder, _current.RootFolder))
+        {
+            await _dialogs.ShowErrorAsync("ライブラリのフォルダの中には保存できません。外付け HDD など、別の場所を選んでください。", "バックアップ");
+            return;
+        }
+        _libraries.SetBackup(_libraries.Backup with { Folder = folder });
+        LoadBackup();
+    }
+
+    private void OnKeepOldChanged(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded && KeepOldBox.Value is { } value)
+        {
+            _libraries.SetBackup(_libraries.Backup with { KeepOldGenerations = (int)Math.Clamp(value, 0, Core.Backup.BackupService.MaxKeepOldGenerations) });
+        }
+    }
+
+    private void OnReminderChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (IsLoaded && ReminderBox.SelectedItem is System.Windows.Controls.ComboBoxItem { Tag: string tag })
+        {
+            _libraries.SetBackup(_libraries.Backup with { ReminderDays = int.Parse(tag, System.Globalization.CultureInfo.InvariantCulture) });
+        }
+    }
+
+    // 決定ログ BB-7: バックアップのあるフォルダを選び、どの回をどこへ戻すかを選ぶ。戻したら、開くかを聞く
+    private async void OnRestoreClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = "バックアップのあるフォルダを選択(バックアップの保存先)" };
+        if (_libraries.Backup.Folder is { } folder && Directory.Exists(folder))
+        {
+            dialog.InitialDirectory = folder;
+        }
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+        var backups = Core.Backup.BackupService.FindBackups(dialog.FolderName);
+        if (backups.Count == 0)
+        {
+            await _dialogs.ShowErrorAsync($"選んだフォルダにバックアップが見つかりません。バックアップの保存先(「{Core.Backup.BackupService.RootFolderName}」フォルダがあるところ)を選んでください。\n{dialog.FolderName}", "バックアップから戻す");
+            return;
+        }
+        var restore = new RestoreWindow(backups) { Owner = this };
+        if (restore.ShowDialog() != true)
+        {
+            return;
+        }
+        var progress = new ProgressWindow("バックアップから戻しています") { Owner = this };
+        var task = Task.Run(() => Core.Backup.BackupService.Restore(restore.SelectedBackup!, restore.SelectedGeneration!.Name, restore.Destination!,
+            progress.Progress, progress.Cancellation));
+        progress.ShowUntil(task);
+        Core.Backup.RestoreResult result;
+        try
+        {
+            result = await task;
+        }
+        catch (OperationCanceledException)
+        {
+            await _dialogs.ShowErrorAsync("途中で止めました。作りかけのものは消しました。", "バックアップから戻す");
+            return;
+        }
+        catch (Exception ex) when (ex is LibraryException or IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            await _dialogs.ShowErrorAsync($"戻せませんでした。今のライブラリとバックアップはそのままです。\n\n{ex.Message}", "バックアップから戻す");
+            return;
+        }
+        var summary = $"{restore.Destination} に戻しました。\nPDF:{result.RestoredPdfs:N0} 件" + (result.SubCount > 0 ? $"(サブライブラリ {result.SubCount} 個を含む)" : "")
+            + (result.MissingPdfs > 0 ? $"\nバックアップに PDF がなかった文書:{result.MissingPdfs:N0} 件(情報は戻しましたが、開けません)" : "");
+        if (await _dialogs.ConfirmAsync("バックアップから戻しました",
+                summary + "\n\n戻したライブラリを開きますか?\n(元のライブラリと同じライブラリとして扱うため、「最近使ったライブラリ」では元のライブラリと入れ替わります。元のライブラリは「ライブラリを開く」で開けます。)",
+                "開く"))
+        {
+            Finish(await _libraries.OpenAsync(result.Library.LibraryFilePath, _dialogs));
         }
     }
 

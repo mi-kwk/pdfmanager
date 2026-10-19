@@ -15,7 +15,7 @@ public sealed record ViewPreferences(string Sort = "Registered", long? SortField
 // ShowRegisterAll: 取り込み画面に「すべて登録」ボタンも表示する(決定ログ R-5、U-17②。初めはオフ)
 // TagCollapseRank: タグの欄で、タグを選ぶと畳む順位の上限。0 は畳まない(決定ログ AA-1。初めは順位 1 だけ)
 public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<RecentLibrary> RecentLibraries, ViewPreferences? View = null,
-    bool ShowRegisterAll = false, int TagCollapseRank = AppSettings.DefaultTagCollapseRank)
+    bool ShowRegisterAll = false, int TagCollapseRank = AppSettings.DefaultTagCollapseRank, BackupPreferences? Backup = null)
 {
     public const int DefaultTagCollapseRank = 1;
 
@@ -24,6 +24,19 @@ public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<Rece
 
     public static AppSettings Empty { get; } = new(null, []);
 }
+
+// 決定ログ BB-2・BB-4・BB-5: バックアップの PC ごとの設定。
+// Folder は保存先、KeepOldGenerations は最新に加えて残す古い回の数(0〜30)、ReminderDays は前回から何日たったら起動時に知らせるか(0 は知らせない)。
+// LastBackups はライブラリ ID ごとの前回のバックアップ
+public sealed record BackupPreferences(string? Folder = null, int KeepOldGenerations = 5, int ReminderDays = 7,
+    IReadOnlyDictionary<string, BackupRecord>? LastBackups = null)
+{
+    public static BackupPreferences Default { get; } = new();
+
+    public BackupRecord? LastFor(Guid libraryId) => LastBackups?.GetValueOrDefault(libraryId.ToString("D"));
+}
+
+public sealed record BackupRecord(DateTimeOffset At, string Result);
 
 // 決定ログ E-3: PC ごとの設定(%LOCALAPPDATA%\PdfManager\settings.json)
 public sealed class AppSettingsStore(string directory)

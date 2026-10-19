@@ -94,6 +94,15 @@ public sealed class LibraryActions(AppSettingsStore store)
         store.Save(Settings);
     }
 
+    // 決定ログ BB-2・BB-4・BB-5: バックアップの設定
+    public BackupPreferences Backup => Settings.Backup ?? BackupPreferences.Default;
+
+    public void SetBackup(BackupPreferences value)
+    {
+        Settings = Settings with { Backup = value };
+        store.Save(Settings);
+    }
+
     public void Forget(string libraryFilePath)
     {
         Settings = AppSettingsStore.Forget(Settings, libraryFilePath);
