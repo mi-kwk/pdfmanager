@@ -4,7 +4,7 @@ namespace PdfManager.Core.Database;
 
 public static class PdfManagerDatabase
 {
-    public const int SchemaVersion = 9;
+    public const int SchemaVersion = 10;
 
     // SQLite 本体は Windows の winsqlite3.dll(決定ログ R-9)。RETURNING を使うため 3.35 以上が必要
     public static readonly Version MinimumSqliteVersion = new(3, 35, 0);
@@ -79,6 +79,10 @@ public static class PdfManagerDatabase
         if (version < 9)
         {
             Execute(connection, Schema.V9, transaction);
+        }
+        if (version < 10)
+        {
+            Execute(connection, Schema.V10, transaction);
         }
         Execute(connection, $"PRAGMA user_version = {SchemaVersion};", transaction);
         transaction.Commit();

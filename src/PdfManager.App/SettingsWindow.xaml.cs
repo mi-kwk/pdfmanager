@@ -58,6 +58,7 @@ public partial class SettingsWindow : FluentWindow
         TagCollapseRankBox.SelectedIndex = libraries.TagCollapseRank;
         UseTextTitleCandidatesBox.IsChecked = libraries.UseTextTitleCandidates;
         DuplicateLooseMatchBox.IsChecked = libraries.DuplicateLooseMatch;
+        RecordUsageBox.IsChecked = libraries.RecordUsage;
         LoadBackup();
         RefreshRecent();
         Loaded += async (_, _) =>
@@ -152,6 +153,30 @@ public partial class SettingsWindow : FluentWindow
         {
             _libraries.SetShowRegisterAll(ShowRegisterAllBox.IsChecked == true);
         }
+    }
+
+    // 決定ログ DA-5: 切り替えたらすぐ保存する(メイン画面に戻ると使われる)
+    private void OnRecordUsageChanged(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded)
+        {
+            _libraries.SetRecordUsage(RecordUsageBox.IsChecked == true);
+        }
+    }
+
+    // 決定ログ DA-5: 開いているライブラリの検索・閲覧の記録をすべて消す
+    private async void OnClearUsageClick(object sender, RoutedEventArgs e)
+    {
+        if (!await _dialogs.ConfirmAsync("記録を消す",
+                $"「{_current.Name}」の検索・閲覧の記録をすべて消しますか?\n\n分析画面の数字が 0 から数え直しになります。PDF や、一覧の閲覧数・最終閲覧日は消えません。", "消す"))
+        {
+            return;
+        }
+        using (var connection = PdfManagerDatabase.Open(_current.DataFolder.DatabasePath))
+        {
+            PdfManager.Core.Analytics.UsageAnalytics.Clear(connection);
+        }
+        await _dialogs.ShowErrorAsync("検索・閲覧の記録を消しました。", "記録を消す");
     }
 
     // 決定ログ DH-2: 切り替えたらすぐ保存する

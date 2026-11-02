@@ -2,6 +2,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PdfManager.App.Services;
+using PdfManager.Core.Analytics;
 using PdfManager.Core.Catalog;
 using PdfManager.Core.Database;
 using PdfManager.Core.Documents;
@@ -758,6 +759,70 @@ public partial class MainViewModel : ObservableObject
     }
 
     // 変更の前後で、サブに印を付けて書き込む。書き込めなかったことは知らせるが、メインの変更はそのまま
+    // ==== 分析画面のための記録(決定ログ DA-1〜DA-5) ====
+
+    // 設定(この PC)の「検索・閲覧の記録を残す」
+    public bool RecordUsage { get; set; } = true;
+
+    private System.Windows.Threading.DispatcherTimer? _searchRecordTimer;
+    private string? _lastRecordedSearch;
+
+    // 決定ログ DA-2: 入力するたびに結果が変わるので、3 秒止まったときに 1 回と数える
+    private void QueueSearchRecord()
+    {
+        if (!RecordUsage)
+        {
+            return;
+        }
+        if (_searchRecordTimer is null)
+        {
+            _searchRecordTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            _searchRecordTimer.Tick += (_, _) => FlushSearchRecord();
+        }
+        _searchRecordTimer.Stop();
+        _searchRecordTimer.Start();
+    }
+
+    // 待っている検索を記録する。キーワードも含むタグもないとき、前と同じ条件のときは数えない
+    private void FlushSearchRecord()
+    {
+        if (_searchRecordTimer is not { IsEnabled: true } timer)
+        {
+            return;
+        }
+        timer.Stop();
+        var keywords = SearchText.Trim();
+        var tags = TagFilters.Where(t => t.State == TagFilterState.Include).Select(t => t.Tag.Name).Order(StringComparer.Ordinal).ToList();
+        var key = DocumentSearchIndex.Normalize(keywords) + "\n" + string.Join("\n", tags);
+        if ((keywords.Length == 0 && tags.Count == 0) || key == _lastRecordedSearch)
+        {
+            return;
+        }
+        _lastRecordedSearch = key;
+        try
+        {
+            using var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath);
+            UsageAnalytics.RecordSearch(connection, keywords, tags, Results.Count, DateTimeOffset.UtcNow, UsageAnalytics.CurrentPc);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            // 記録できなくても検索には影響しない
+        }
+    }
+
+    // 決定ログ DA-9: 分析画面から、キーワードやタグで検索する(ほかの条件は外す)
+    public void SearchFromAnalytics(string? keywords, string? tagName)
+    {
+        ClearConditions();
+        if (tagName is not null && TagFilters.FirstOrDefault(t => t.Tag.Name == tagName) is { } tag)
+        {
+            tag.State = TagFilterState.Include;
+        }
+        SearchText = keywords ?? "";
+        UpdateOtherTags();
+        ApplySearch();
+    }
+
     // 決定ログ DL-1〜DL-3: 星を押したら、選んでいる全件の評価だけをすぐ保存する。ほかの欄の保存していない変更はそのまま残す
     private async Task SaveRatingAsync(int rating)
     {
@@ -1156,6 +1221,7 @@ public partial class MainViewModel : ObservableObject
 
         OnPropertyChanged(nameof(IsFiltering));
         OnPropertyChanged(nameof(ResultText));
+        QueueSearchRecord();
         SelectionRestoreRequested?.Invoke(SelectedIds.ToList());
     }
 
@@ -1285,7 +1351,17 @@ public partial class MainViewModel : ObservableObject
     // 決定ログ K-3: タブで新しく開いたとき
     public async void RecordView(string documentId)
     {
-        await ChangeAsync([documentId], connection => new DocumentRepository(connection).RecordView(documentId, DateTimeOffset.UtcNow));
+        // 決定ログ DA-2: 結果から PDF を開いたら、待っている検索をその時点で 1 回と数える
+        FlushSearchRecord();
+        await ChangeAsync([documentId], connection =>
+        {
+            new DocumentRepository(connection).RecordView(documentId, DateTimeOffset.UtcNow);
+            // 決定ログ DA-1・DA-4: 開いた記録(PC の名前つき)
+            if (RecordUsage)
+            {
+                UsageAnalytics.RecordView(connection, documentId, DateTimeOffset.UtcNow, UsageAnalytics.CurrentPc);
+            }
+        });
         // 編集中の内容を消さないよう、保存していない変更がないときだけ表示を更新する
         if (!HasChanges && SelectedIds.Contains(documentId))
         {

@@ -6,6 +6,28 @@ namespace PdfManager.Core.Database;
 // docs/03_データ設計.md に対応。全文検索用の FTS5 索引は M3(検索)で追加する。
 internal static class Schema
 {
+    // 分析画面のための記録(決定ログ DA-1〜DA-5)。PDF を開いた記録と、検索の記録。pc は記録した PC の名前(DA-4)。
+    // 開いた記録は文書を削除すると消える。検索の記録の tag_names は「、」区切り(タグを消したり名前を変えたりしても、記録したときの名前で残す)
+    public const string V10 = """
+        CREATE TABLE view_events (
+            id          INTEGER PRIMARY KEY,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            viewed_at   TEXT NOT NULL,
+            pc          TEXT NOT NULL
+        );
+        CREATE INDEX ix_view_events_at ON view_events(viewed_at);
+        CREATE INDEX ix_view_events_document ON view_events(document_id);
+        CREATE TABLE search_events (
+            id           INTEGER PRIMARY KEY,
+            searched_at  TEXT NOT NULL,
+            pc           TEXT NOT NULL,
+            keywords     TEXT NOT NULL,
+            tag_names    TEXT NOT NULL,
+            result_count INTEGER NOT NULL
+        );
+        CREATE INDEX ix_search_events_at ON search_events(searched_at);
+        """;
+
     // 1 ページ目の見た目の指紋(決定ログ DH-1)と、「重複ではない」とした組(決定ログ DH-7。first_id < second_id)
     public const string V9 = """
         CREATE TABLE page_fingerprints (

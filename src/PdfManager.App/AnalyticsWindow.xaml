@@ -1,0 +1,244 @@
+<ui:FluentWindow x:Class="PdfManager.App.AnalyticsWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:vm="clr-namespace:PdfManager.App.ViewModels"
+                 xmlns:an="clr-namespace:PdfManager.Core.Analytics;assembly=PdfManager.Core"
+                 mc:Ignorable="d"
+                 d:DataContext="{d:DesignInstance vm:AnalyticsViewModel}"
+                 Title="分析"
+                 Width="1280" Height="880" MinWidth="960" MinHeight="600"
+                 WindowStartupLocation="CenterOwner"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+
+    <ui:FluentWindow.Resources>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+        <Style x:Key="CardTitle" TargetType="ui:TextBlock">
+            <Setter Property="FontTypography" Value="BodyStrong" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style x:Key="Hint" TargetType="ui:TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+        <!-- 件数つきの 1 行(ランキング) -->
+        <DataTemplate x:Key="RankedTextRow">
+            <DockPanel Margin="0,1">
+                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat={}{0:N0} 回}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="8,0,0,0" />
+                <ui:TextBlock Text="{Binding Text}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text}" />
+            </DockPanel>
+        </DataTemplate>
+    </ui:FluentWindow.Resources>
+
+    <!-- SC-22 分析(決定ログ DA-1〜DA-11) -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="分析" />
+
+        <!-- 決定ログ DA-8・DA-4: 期間と PC -->
+        <DockPanel Grid.Row="1" Margin="16,0,16,10">
+            <ui:Button DockPanel.Dock="Right" Content="閉じる" Click="OnCloseClick" Margin="12,0,0,0" />
+            <StackPanel Orientation="Horizontal">
+                <ui:Button Content="30 日" Command="{Binding SelectPeriodCommand}" CommandParameter="30" Margin="0,0,6,0" />
+                <ui:Button Content="90 日" Command="{Binding SelectPeriodCommand}" CommandParameter="90" Margin="0,0,6,0" />
+                <ui:Button Content="1 年" Command="{Binding SelectPeriodCommand}" CommandParameter="365" Margin="0,0,6,0" />
+                <ui:Button Content="すべて" Command="{Binding SelectPeriodCommand}" CommandParameter="all" Margin="0,0,16,0" />
+                <DatePicker SelectedDate="{Binding From}" Width="180" AutomationProperties.Name="期間の始め" VerticalAlignment="Center" />
+                <ui:TextBlock Text="〜" VerticalAlignment="Center" Margin="6,0" />
+                <DatePicker SelectedDate="{Binding To}" Width="180" AutomationProperties.Name="期間の終わり" VerticalAlignment="Center" Margin="0,0,16,0" />
+                <CheckBox Content="{Binding ThisPc}" IsChecked="{Binding OnlyThisPc}" AutomationProperties.Name="この PC だけ" VerticalAlignment="Center" />
+            </StackPanel>
+        </DockPanel>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="16,0,16,8">
+            <StackPanel>
+                <ui:TextBlock Text="{Binding PeriodText}" Style="{StaticResource Hint}" Margin="0,0,0,4" />
+                <ui:TextBlock Text="{Binding Note}" Style="{StaticResource Hint}" Margin="0,0,0,8" />
+
+                <!-- ① 概要 -->
+                <Border Style="{StaticResource Card}">
+                    <UniformGrid Columns="5">
+                        <StackPanel>
+                            <ui:TextBlock Text="登録している PDF" Style="{StaticResource Hint}" />
+                            <ui:TextBlock Text="{Binding Summary.DocumentCount, StringFormat={}{0:N0} 件}" FontSize="22" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <StackPanel>
+                            <ui:TextBlock Text="合計の容量" Style="{StaticResource Hint}" />
+                            <ui:TextBlock Text="{Binding SizeText}" FontSize="22" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <StackPanel>
+                            <ui:TextBlock Text="期間に開いた回数" Style="{StaticResource Hint}" />
+                            <ui:TextBlock Text="{Binding Summary.ViewCount, StringFormat={}{0:N0} 回}" FontSize="22" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <StackPanel>
+                            <ui:TextBlock Text="期間に登録した PDF" Style="{StaticResource Hint}" />
+                            <ui:TextBlock Text="{Binding Summary.RegisteredCount, StringFormat={}{0:N0} 件}" FontSize="22" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <StackPanel>
+                            <ui:TextBlock Text="期間の検索" Style="{StaticResource Hint}" />
+                            <ui:TextBlock Text="{Binding Summary.SearchCount, StringFormat={}{0:N0} 回}" FontSize="22" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </UniformGrid>
+                </Border>
+
+                <!-- ③ 開いた回数の推移 -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <RadioButton Content="日" GroupName="Unit" x:Name="DayRadio" Checked="OnUnitChecked" Tag="{x:Static an:TrendUnit.Day}" Margin="0,0,8,0" />
+                                <RadioButton Content="週" GroupName="Unit" x:Name="WeekRadio" Checked="OnUnitChecked" Tag="{x:Static an:TrendUnit.Week}" Margin="0,0,8,0" />
+                                <RadioButton Content="月" GroupName="Unit" x:Name="MonthRadio" Checked="OnUnitChecked" Tag="{x:Static an:TrendUnit.Month}" />
+                            </StackPanel>
+                            <ui:TextBlock Text="開いた回数の推移" Style="{StaticResource CardTitle}" />
+                        </DockPanel>
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Trend}" AutomationProperties.Name="開いた回数の推移" Height="190">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Width="40" Margin="1,0" ToolTip="{Binding Tooltip}">
+                                            <ui:TextBlock DockPanel.Dock="Bottom" Text="{Binding Label}" FontSize="10" HorizontalAlignment="Center"
+                                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            <StackPanel VerticalAlignment="Bottom">
+                                                <ui:TextBlock Text="{Binding Count}" FontSize="10" HorizontalAlignment="Center" />
+                                                <Rectangle Height="{Binding Height}" Width="24" RadiusX="2" RadiusY="2" Fill="{DynamicResource AccentFillColorDefaultBrush}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <!-- ② よく開く PDF -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <ui:TextBlock Text="よく開く PDF(上位 20 件・ダブルクリックで開く)" Style="{StaticResource CardTitle}" />
+                                <ListBox ItemsSource="{Binding TopViewed}" MouseDoubleClick="OnDocumentDoubleClick" MaxHeight="420" AutomationProperties.Name="よく開く PDF">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <ui:TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat={}{0:N0} 回}" Margin="8,0,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <ui:TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}" />
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Border>
+                        <!-- ⑥ タグごとの件数と開いた回数 -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding GroupOptions}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedGroup}"
+                                              MinWidth="200" AutomationProperties.Name="タググループ" />
+                                    <ui:TextBlock Text="タグごとの件数と開いた回数(押すとそのタグで検索)" Style="{StaticResource CardTitle}" VerticalAlignment="Center" Margin="0" />
+                                </DockPanel>
+                                <ListBox ItemsSource="{Binding TagStats}" SelectionChanged="OnTagStatSelected" MaxHeight="420" AutomationProperties.Name="タグごとの件数">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="230" />
+                                                </Grid.ColumnDefinitions>
+                                                <ui:TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Rectangle Width="{Binding DocumentWidth}" Height="8" Fill="{DynamicResource TextFillColorTertiaryBrush}" VerticalAlignment="Center" />
+                                                        <ui:TextBlock Text="{Binding DocumentCount, StringFormat={} {0:N0} 件}" FontSize="11" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Rectangle Width="{Binding ViewWidth}" Height="8" Fill="{DynamicResource AccentFillColorDefaultBrush}" VerticalAlignment="Center" />
+                                                        <ui:TextBlock Text="{Binding ViewCount, StringFormat={} {0:N0} 回}" FontSize="11" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <!-- ④ よく使う検索 -->
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <ui:TextBlock Text="よく使うキーワード" Style="{StaticResource CardTitle}" />
+                                    <ListBox ItemsSource="{Binding TopKeywords}" ItemTemplate="{StaticResource RankedTextRow}" SelectionChanged="OnKeywordSelected"
+                                             MaxHeight="300" AutomationProperties.Name="よく使うキーワード" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <ui:TextBlock Text="よく使うタグ" Style="{StaticResource CardTitle}" />
+                                    <ListBox ItemsSource="{Binding TopTags}" ItemTemplate="{StaticResource RankedTextRow}" SelectionChanged="OnTagSelected"
+                                             MaxHeight="300" AutomationProperties.Name="よく使うタグ" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <!-- ⑤ 0 件だった検索 -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <ui:TextBlock Text="0 件だった検索(付けるべきタグのヒント)" Style="{StaticResource CardTitle}" />
+                                <ListBox ItemsSource="{Binding ZeroResults}" ItemTemplate="{StaticResource RankedTextRow}" MaxHeight="240" AutomationProperties.Name="0 件だった検索" />
+                            </StackPanel>
+                        </Border>
+                        <!-- ⑦ 長く開いていない PDF -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <ui:TextBlock Text="長く開いていない PDF(ダブルクリックで開く)" Style="{StaticResource CardTitle}" />
+                                <ListBox ItemsSource="{Binding LongUnopened}" MouseDoubleClick="OnDocumentDoubleClick" MaxHeight="320" AutomationProperties.Name="長く開いていない PDF">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <ui:TextBlock DockPanel.Dock="Right" Margin="8,0,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                              Text="{Binding LastViewedAt, StringFormat=最後に開いた日 {0:yyyy/MM/dd}, TargetNullValue=開いたことがない}" />
+                                                <ui:TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FileName}" />
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</ui:FluentWindow>

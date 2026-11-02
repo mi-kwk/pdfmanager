@@ -178,6 +178,14 @@
                               AutomationProperties.Name="1 ページ目の重複チェックで、似ているものも出す" />
                     <ui:TextBlock Text="オフのときは、1 ページ目がほぼ同じものだけを出します。オンにすると、表紙のデザインが同じで文字が少し違うものなども出します。"
                                   TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <!-- 決定ログ DA-5: 分析画面のための記録 -->
+                    <DockPanel Margin="0,10,0,0">
+                        <ui:Button DockPanel.Dock="Right" Content="記録を消す" Click="OnClearUsageClick" AutomationProperties.Name="記録を消す" Margin="8,0,0,0" />
+                        <CheckBox x:Name="RecordUsageBox" Content="検索・閲覧の記録を残す(分析画面に使う)"
+                                  Checked="OnRecordUsageChanged" Unchecked="OnRecordUsageChanged" AutomationProperties.Name="検索・閲覧の記録を残す" />
+                    </DockPanel>
+                    <ui:TextBlock Text="記録は開いているライブラリに残ります(この PC の名前つき)。「記録を消す」はこのライブラリの記録をすべて消します(PDF や閲覧数は消えません)。"
+                                  TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Border>
             <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
