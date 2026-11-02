@@ -71,8 +71,23 @@ public partial class MainWindow : FluentWindow
         // ライブラリを切り替えたときや終了したときは、ビューアも閉じる(決定ログ K-6)
         Closed += (_, _) =>
         {
+            // 決定ログ BD-3: アプリを終えるとき(ライブラリの切り替えではないとき)は、後片付けの前に見張りを始める。
+            // 閉じるときには WPF がメイン画面の登録を先に外していることがあるため、「別のメイン画面に切り替わった」ときだけ除く
+            if (Application.Current.MainWindow is not MainWindow other || other == this)
+            {
+                App.StartExitWatchdog(0, "メイン画面を閉じた");
+            }
+#if DEBUG
+            // 試験用:閉じる途中で止まった状態を作る(見張りで終わることを確かめるため。配布用の exe には入らない)
+            if (Environment.GetEnvironmentVariable("PDFMANAGER_TEST_HANG_ON_CLOSE") == "1")
+            {
+                Thread.Sleep(TimeSpan.FromMinutes(1));
+            }
+#endif
             _deviceChangeTimer.Stop();
             _viewer?.Close();
+            _duplicateCheck?.Close();
+            _analytics?.Close();
         };
     }
 

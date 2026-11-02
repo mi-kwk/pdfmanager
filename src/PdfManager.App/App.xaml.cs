@@ -78,13 +78,47 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         base.OnExit(e);
-        var exitCode = e.ApplicationExitCode;
+        StartExitWatchdog(e.ApplicationExitCode, "終了の処理");
+    }
+
+    private static int _watchdogStarted;
+
+    // 決定ログ BD-3(2026-11-03 に強めた): メイン画面を閉じた時点で見張りを始める。ビューアの後片付けなどで画面の処理が止まると
+    // 終了の処理(OnExit)まで進まず、画面のない PdfManager が残って exe を上書きできなくなるため。
+    // 10 秒で Environment.Exit、それでも残れば 3 秒後にプロセスを終わらせる。強制的に終えたときは error.log に残す
+    public static void StartExitWatchdog(int exitCode, string reason)
+    {
+        if (Interlocked.Exchange(ref _watchdogStarted, 1) == 1)
+        {
+            return;
+        }
         new Thread(() =>
         {
             Thread.Sleep(TimeSpan.FromSeconds(10));
+            WriteLog($"PdfManager を閉じてから 10 秒たっても終わらなかったため、強制的に終了しました(きっかけ:{reason})。");
+            var killer = new Thread(() =>
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(3));
+                System.Diagnostics.Process.GetCurrentProcess().Kill();
+            })
+            { IsBackground = true, Name = "ExitKiller" };
+            killer.Start();
             Environment.Exit(exitCode);
         })
         { IsBackground = true, Name = "ExitWatchdog" }.Start();
+    }
+
+    private static void WriteLog(string message)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(AppSettingsStore.DefaultDirectory);
+            System.IO.File.AppendAllText(System.IO.Path.Combine(AppSettingsStore.DefaultDirectory, "error.log"), $"==== {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}\n{message}\n\n");
+        }
+        catch (Exception)
+        {
+            // 記録できなくても終了は続ける
+        }
     }
 
     // 前回のライブラリ(または --library)を開く。開けなければ理由を表示して null を返す
