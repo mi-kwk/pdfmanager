@@ -523,8 +523,21 @@ public partial class DocumentEditor : ObservableObject
         var rating = !IsRatingMixed && current is [var only] && only == value ? 0 : value;
         IsRatingMixed = false;
         ShowStars(rating);
+        // 決定ログ DL-1・DL-2: 評価だけをすぐ保存する画面では、「保存していない変更」にしない
+        if (RatingSaver is { } save)
+        {
+            foreach (var item in _targets)
+            {
+                item.Rating = rating;
+            }
+            _ = save(rating);
+            return;
+        }
         ApplyEdit(i => i.Rating = rating);
     }
+
+    // 決定ログ DL-1〜DL-3: 星を押したら評価だけをすぐ保存する(詳細エリア)。null なら「保存」で保存する
+    public Func<int, Task>? RatingSaver { get; set; }
 
     private void ShowStars(int rating)
     {

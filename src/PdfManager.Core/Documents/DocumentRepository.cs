@@ -259,6 +259,21 @@ public sealed class DocumentRepository(SqliteConnection connection)
         transaction.Commit();
     }
 
+    // 決定ログ DL-1〜DL-3: 評価だけを保存する(星を押したとき)
+    public void SetRating(IReadOnlyCollection<string> ids, int rating, DateTimeOffset now)
+    {
+        using var transaction = connection.BeginTransaction();
+        foreach (var id in ids)
+        {
+            using var command = Command(transaction, "UPDATE documents SET rating = $rating, updated_at = $now WHERE id = $id;");
+            command.Parameters.AddWithValue("$id", id);
+            command.Parameters.AddWithValue("$rating", Math.Clamp(rating, 0, 5));
+            command.Parameters.AddWithValue("$now", now.UtcDateTime.ToString("O"));
+            command.ExecuteNonQuery();
+        }
+        transaction.Commit();
+    }
+
     // 決定ログ K-3: ビューアのタブで新しく開いたとき
     public void RecordView(string id, DateTimeOffset now)
     {

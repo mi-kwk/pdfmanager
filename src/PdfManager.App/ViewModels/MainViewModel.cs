@@ -122,6 +122,7 @@ public partial class MainViewModel : ObservableObject
             HasChanges = true;
             SaveMessage = null;
         };
+        Editor.RatingSaver = SaveRatingAsync;
         // 決定ログ DB-2: タグ設定の画面から紐づけ・名前を直したら、すぐ保存して、編集中の内容は残したままタグの定義を読み直す
         Editor.CatalogWriter = action =>
         {
@@ -569,9 +570,48 @@ public partial class MainViewModel : ObservableObject
             return [];
         }
         var related = RelatedRows.Select(r => r.Id).ToHashSet();
+        // 決定ログ DK-1: 別の続きに入っている PDF も選べる。同じ続きの中の PDF は選べない
+        var sameChain = ChainRows.Select(r => r.Id).ToHashSet();
         return _index.Search(new SearchQuery { IncludeOldVersions = true })
-            .Where(e => e.Id != current.Id && (forChain ? e.ChainLength == 0 : !related.Contains(e.Id)))
+            .Where(e => e.Id != current.Id && (forChain ? !sameChain.Contains(e.Id) : !related.Contains(e.Id)))
             .ToList();
+    }
+
+    // 決定ログ DK-2: 今の文書の第 1 グループ(順位 1)のタグ
+    public IReadOnlyList<(long Id, string Name)> FirstRankTagsOfCurrent()
+    {
+        if (SingleDetail is not { } current)
+        {
+            return [];
+        }
+        using var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath);
+        var catalog = new CatalogRepository(connection);
+        var firstRank = catalog.GetGroups().Where(g => g.Rank == 1).Select(g => g.Id).ToHashSet();
+        return catalog.GetTags()
+            .Where(t => current.TagIds.Contains(t.Id) && t.GroupId is { } g && firstRank.Contains(g))
+            .Select(t => (t.Id, t.Name))
+            .ToList();
+    }
+
+    // 決定ログ DK-1: つなぐと切れてしまうつながりがあれば、切ってよいか確かめる。やめたら false
+    public async Task<bool> ConfirmChainCutAsync(string kind, string otherId)
+    {
+        if (kind == "related")
+        {
+            return true;
+        }
+        using var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath);
+        var links = new LinkRepository(connection);
+        if (links.LinkToCut(otherId, asNext: kind == "next") is not { } cut)
+        {
+            return true;
+        }
+        var titles = new DocumentRepository(connection).GetDetails([otherId, cut]).ToDictionary(d => d.Id, d => d.Title);
+        var (other, cutTitle) = (titles.GetValueOrDefault(otherId, ""), titles.GetValueOrDefault(cut, ""));
+        var message = kind == "next"
+            ? $"「{other}」は「{cutTitle}」の次につながっています。\n\n「{cutTitle}」とのつながりを切って、「{other}」とその後ろをまとめてつなぎますか?"
+            : $"「{other}」の次に「{cutTitle}」がつながっています。\n\n「{cutTitle}」とのつながりを切って、「{other}」とその前をまとめてつなぎますか?";
+        return await _dialogs.ConfirmAsync("続きをつなぐ", message, "切ってつなぐ");
     }
 
     // kind は "previous"(前をつなぐ)・"next"(次をつなぐ)・"related"(関連を追加)
@@ -718,6 +758,38 @@ public partial class MainViewModel : ObservableObject
     }
 
     // 変更の前後で、サブに印を付けて書き込む。書き込めなかったことは知らせるが、メインの変更はそのまま
+    // 決定ログ DL-1〜DL-3: 星を押したら、選んでいる全件の評価だけをすぐ保存する。ほかの欄の保存していない変更はそのまま残す
+    private async Task SaveRatingAsync(int rating)
+    {
+        var items = _detailItems.ToList();
+        var ids = items.Select(i => i.Detail.Id).ToList();
+        if (ids.Count == 0 || !await EnsureEditableAsync(ids, "評価を保存できません"))
+        {
+            // 保存できないときは、表示を保存されている評価に戻す
+            LoadDetailsKeepingEdits(items);
+            return;
+        }
+        await ChangeAsync(ids, connection => new DocumentRepository(connection).SetRating(ids, rating, DateTimeOffset.UtcNow));
+        using (var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath))
+        {
+            _index = DocumentSearchIndex.Load(connection);
+        }
+        ApplySearch();
+        SaveMessage = rating == 0
+            ? (ids.Count == 1 ? "評価を外しました。" : $"{ids.Count} 件の評価を外しました。")
+            : (ids.Count == 1 ? $"評価(★{rating})を保存しました。" : $"{ids.Count} 件の評価(★{rating})を保存しました。");
+    }
+
+    // 評価だけを保存されている値に戻す(ほかの欄の入力はそのまま)
+    private void LoadDetailsKeepingEdits(IReadOnlyList<DetailItem> items)
+    {
+        foreach (var item in items)
+        {
+            item.Rating = item.Detail.Rating;
+        }
+        Editor.Reload();
+    }
+
     private async Task ChangeAsync(IReadOnlyCollection<string> documentIds, Action<Microsoft.Data.Sqlite.SqliteConnection> change)
     {
         var token = await _storage.RunAsync(s => s.BeginChange(documentIds));

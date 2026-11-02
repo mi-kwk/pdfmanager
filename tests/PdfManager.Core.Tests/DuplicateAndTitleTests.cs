@@ -84,6 +84,20 @@ public sealed class DuplicateAndTitleTests : IDisposable
         Assert.Equal(("とんこつらーめん６", "fixed.pdf"), Read("d5"));
     }
 
+    // 決定ログ DL-1〜DL-3: 評価だけを保存する(ほかの値は変えない)
+    [Fact]
+    public void SetRating_ChangesOnlyRating()
+    {
+        Insert("r1", "評価1", useTitleAsFileName: true);
+        Insert("r2", "評価2", useTitleAsFileName: true);
+
+        new DocumentRepository(_connection).SetRating(["r1", "r2"], 4, DateTimeOffset.UtcNow);
+
+        var details = new DocumentRepository(_connection).GetDetails(["r1", "r2"]);
+        Assert.All(details, d => Assert.Equal(4, d.Rating));
+        Assert.Equal(("評価1", "評価1.pdf"), Read("r1"));
+    }
+
     [Fact]
     public void TitleBatch_ConflictWithDocumentOutsideTheBatch()
     {

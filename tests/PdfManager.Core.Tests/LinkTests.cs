@@ -49,14 +49,59 @@ public sealed class LinkTests : IDisposable
         Assert.Empty(Chain("shiryo"));
     }
 
+    // 決定ログ DK-1: 同じ続きの中と自分自身はつなげない
     [Fact]
-    public void Join_RejectsDocumentAlreadyInAnotherChain()
+    public void Join_RejectsSameChainAndItself()
+    {
+        _links.InsertNext("zen", "chu");
+        _links.InsertNext("chu", "kou");
+
+        Assert.Throws<InvalidOperationException>(() => _links.InsertNext("kou", "zen"));
+        Assert.Throws<InvalidOperationException>(() => _links.InsertPrevious("zen", "chu"));
+        Assert.Throws<InvalidOperationException>(() => _links.InsertNext("other", "other"));
+    }
+
+    // 決定ログ DK-1: 別の続きの先頭をつなぐと、その後ろごと合流する(1→2 と 3→4 で、2 の次に 3)
+    [Fact]
+    public void InsertNext_HeadOfAnotherChain_MergesWholeChain()
     {
         _links.InsertNext("zen", "chu");
         _links.InsertNext("kou", "shiryo");
 
-        Assert.Throws<InvalidOperationException>(() => _links.InsertNext("zen", "kou"));
-        Assert.Throws<InvalidOperationException>(() => _links.InsertNext("other", "other"));
+        Assert.Null(_links.LinkToCut("kou", asNext: true));
+        _links.InsertNext("chu", "kou");
+
+        Assert.Equal(["zen", "chu", "kou", "shiryo"], Chain("zen"));
+    }
+
+    // 途中の PDF を選ぶと、そこから後ろだけを移し、前とのつながりは切る。つなぐ側の次は、移したものの最後の後ろに入る
+    [Fact]
+    public void InsertNext_MiddleOfAnotherChain_MovesTailAndInsertsBeforeOldNext()
+    {
+        _links.InsertNext("zen", "other");        // zen → other
+        _links.InsertNext("chu", "kou");
+        _links.InsertNext("kou", "shiryo");       // chu → kou → shiryo
+
+        Assert.Equal("chu", _links.LinkToCut("kou", asNext: true));
+        _links.InsertNext("zen", "kou");
+
+        Assert.Equal(["zen", "kou", "shiryo", "other"], Chain("zen"));
+        Assert.Empty(Chain("chu"));
+    }
+
+    // 前をつなぐときは、選んだ PDF とその前をまとめて移す
+    [Fact]
+    public void InsertPrevious_MiddleOfAnotherChain_MovesHeadPart()
+    {
+        _links.InsertNext("other", "zen");        // other → zen
+        _links.InsertNext("chu", "kou");
+        _links.InsertNext("kou", "shiryo");       // chu → kou → shiryo
+
+        Assert.Equal("shiryo", _links.LinkToCut("kou", asNext: false));
+        _links.InsertPrevious("zen", "kou");
+
+        Assert.Equal(["other", "chu", "kou", "zen"], Chain("zen"));
+        Assert.Empty(Chain("shiryo"));
     }
 
     [Fact]

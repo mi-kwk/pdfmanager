@@ -370,9 +370,10 @@ public partial class MainWindow : FluentWindow
         {
             return;
         }
-        var picker = new DocumentPickerWindow(title, guide.Replace("{0}", current.Title), _viewModel.LinkCandidates(forChain: kind != "related")) { Owner = this };
+        var context = new PickerContext(current.Title, kind switch { "next" => 1, "previous" => -1, _ => 0 }, _viewModel.FirstRankTagsOfCurrent());
+        var picker = new DocumentPickerWindow(title, guide.Replace("{0}", current.Title), _viewModel.LinkCandidates(forChain: kind != "related"), context) { Owner = this };
         picker.ShowDialog();
-        if (picker.Selected is { } selected)
+        if (picker.Selected is { } selected && await _viewModel.ConfirmChainCutAsync(kind, selected.Id))
         {
             await _viewModel.LinkAsync(kind, selected.Id);
             SelectDocument(current.Id);
@@ -380,10 +381,10 @@ public partial class MainWindow : FluentWindow
     }
 
     private async void OnLinkPreviousClick(object sender, RoutedEventArgs e) =>
-        await PickAndLinkAsync("previous", "前をつなぐ", "「{0}」の前(前編など)になる PDF を選んでください。すでに別の続きに入っている PDF は出てきません。");
+        await PickAndLinkAsync("previous", "前をつなぐ", "「{0}」の前(前編など)になる PDF を選んでください。別の続きに入っている PDF を選ぶと、その PDF と、それより前をまとめてつなぎます。");
 
     private async void OnLinkNextClick(object sender, RoutedEventArgs e) =>
-        await PickAndLinkAsync("next", "次をつなぐ", "「{0}」の次(後編など)になる PDF を選んでください。すでに別の続きに入っている PDF は出てきません。");
+        await PickAndLinkAsync("next", "次をつなぐ", "「{0}」の次(後編など)になる PDF を選んでください。別の続きに入っている PDF を選ぶと、その PDF と、それより後ろをまとめてつなぎます。");
 
     private async void OnAddRelatedClick(object sender, RoutedEventArgs e) =>
         await PickAndLinkAsync("related", "関連を追加", "「{0}」に関連する PDF を選んでください(順番はありません)。");
@@ -531,6 +532,26 @@ public partial class MainWindow : FluentWindow
             ids => _viewModel.DeleteDocumentsAsync(ids, closing => _viewer?.CloseDocuments(closing))) { Owner = this };
         _duplicateCheck.Closed += (_, _) => _duplicateCheck = null;
         _duplicateCheck.Show();
+    }
+
+    // 決定ログ DM-1: タグの一括付与の画面。右クリックから開いたときは、選んでいる PDF にチェックを付けて始める
+    private void OnTagBulkClick(object sender, RoutedEventArgs e) => OpenTagBulk([]);
+
+    private void OnTagBulkSelectedClick(object sender, RoutedEventArgs e) =>
+        OpenTagBulk(DocumentList.SelectedItems.Cast<DocumentCard>().Select(c => c.Entry.Id).ToList());
+
+    private async void OpenTagBulk(IReadOnlyList<string> selectedIds)
+    {
+        if (!await _viewModel.ResolvePendingChangesAsync())
+        {
+            return;
+        }
+        var window = new TagBulkWindow(_viewModel.DataFolder, _storage, selectedIds, _libraries.TagCollapseRank) { Owner = this };
+        window.ShowDialog();
+        if (window.Saved)
+        {
+            _viewModel.Refresh();
+        }
     }
 
     // 決定ログ DI-1: タイトルの付け直しの画面
