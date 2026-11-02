@@ -2,6 +2,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using PdfManager.Core.Database;
+using PdfManager.Core.Import;
 using PdfManager.Core.Library;
 using PdfManager.Core.Storage;
 using PdfManager.Core.Text;
@@ -108,6 +109,8 @@ public static class BackupService
                 bytes += size;
             }
         }
+        // 決定ログ DD-9: 保留の PDF も写す(元のフォルダから移したので、そこにしかない)
+        bytes += HoldFilesToCopy(storage.Main, folder).Sum(f => f.Length);
         return new BackupPlan(folder, pdfCount, bytes, FreeBytes(rootFolder), unavailable.Order().ToList());
     }
 
@@ -166,6 +169,7 @@ public static class BackupService
                 copied++;
             }
             progress?.Report(new MoveProgress(documents.Count, documents.Count, ""));
+            MirrorHoldFolder(storage.Main, folder);
 
             // 3. この回を確定する(最後まで書けてから名前を付けるので、途中で止まっても前の回は残る)
             File.Move(tempDb, finalDb, overwrite: true);
@@ -310,6 +314,7 @@ public static class BackupService
                     missing++;
                 }
             }
+            CopyFolder(Path.Combine(backup.Folder, SetAsideStore.HoldFolderName), new SetAsideStore(main.DataFolder).FolderOf(SetAsideKind.Hold));
             progress?.Report(new MoveProgress(documents.Count, documents.Count, ""));
             return new RestoreResult(main, restored, missing, subs.Count);
         }
@@ -352,6 +357,56 @@ public static class BackupService
         var temp = target + ".tmp";
         File.Copy(source, temp, overwrite: true);
         File.Move(temp, target, overwrite: true);
+    }
+
+    // 決定ログ DD-9: 保留フォルダは最新の状態だけを写す(回ごとには分けない)。なくなったものはバックアップからも消す
+    private static void MirrorHoldFolder(LibraryInfo library, string backupFolder)
+    {
+        var target = Path.Combine(backupFolder, SetAsideStore.HoldFolderName);
+        var source = new SetAsideStore(library.DataFolder).FolderOf(SetAsideKind.Hold);
+        foreach (var file in HoldFilesToCopy(library, backupFolder))
+        {
+            Directory.CreateDirectory(target);
+            var temp = Path.Combine(target, file.Name + ".tmp");
+            File.Copy(file.FullName, temp, overwrite: true);
+            File.Move(temp, Path.Combine(target, file.Name), overwrite: true);
+        }
+        if (!Directory.Exists(target))
+        {
+            return;
+        }
+        foreach (var file in Directory.EnumerateFiles(target).Where(f => !File.Exists(Path.Combine(source, Path.GetFileName(f)))).ToList())
+        {
+            File.Delete(file);
+        }
+    }
+
+    private static IEnumerable<FileInfo> HoldFilesToCopy(LibraryInfo library, string backupFolder)
+    {
+        var source = new SetAsideStore(library.DataFolder).FolderOf(SetAsideKind.Hold);
+        if (!Directory.Exists(source))
+        {
+            return [];
+        }
+        var target = Path.Combine(backupFolder, SetAsideStore.HoldFolderName);
+        return new DirectoryInfo(source).EnumerateFiles().Where(f =>
+        {
+            var copy = new FileInfo(Path.Combine(target, f.Name));
+            return !copy.Exists || copy.Length != f.Length || copy.LastWriteTimeUtc < f.LastWriteTimeUtc;
+        }).ToList();
+    }
+
+    private static void CopyFolder(string source, string target)
+    {
+        if (!Directory.Exists(source))
+        {
+            return;
+        }
+        Directory.CreateDirectory(target);
+        foreach (var file in Directory.EnumerateFiles(source))
+        {
+            File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true);
+        }
     }
 
     private static IEnumerable<(string Id, long Size, string? StorageId)> ReadDocuments(SqliteConnection connection)

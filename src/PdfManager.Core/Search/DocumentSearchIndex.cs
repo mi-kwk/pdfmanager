@@ -73,6 +73,15 @@ public sealed class DocumentSearchIndex
             (tags.TryGetValue(documentId, out var list) ? list : tags[documentId] = []).Add((tagId, name));
         }
 
+        // 決定ログ DE-2: タグの別名でも見つかるように、キーワード検索の対象に入れる
+        var aliases = new Dictionary<string, List<string>>();
+        foreach (var (documentId, alias) in Query(connection,
+            "SELECT dt.document_id, a.name FROM document_tags dt JOIN tag_aliases a ON a.tag_id = dt.tag_id;",
+            r => (r.GetString(0), r.GetString(1))))
+        {
+            (aliases.TryGetValue(documentId, out var list) ? list : aliases[documentId] = []).Add(alias);
+        }
+
         var fields = new Dictionary<string, List<(long FieldId, string Name, FieldType Type, FieldValue Value)>>();
         foreach (var row in Query(connection,
             """
@@ -122,7 +131,7 @@ public sealed class DocumentSearchIndex
                 };
                 // 決定ログ I-2・J-6: タイトル・タグ名・ファイル名・項目の値・メモを対象にする
                 var text = Normalize(string.Join('\n',
-                    new[] { entry.Title, entry.FileName, r.GetString(5) }.Concat(entry.TagNames).Concat(entry.FieldValues.Select(f => f.Value))));
+                    new[] { entry.Title, entry.FileName, r.GetString(5) }.Concat(entry.TagNames).Concat(aliases.GetValueOrDefault(id) ?? []).Concat(entry.FieldValues.Select(f => f.Value))));
                 return (entry, text);
             });
         return new DocumentSearchIndex(entries);
@@ -315,17 +324,7 @@ public sealed class DocumentSearchIndex
     }
 
     // 決定ログ I-1: 全角・半角、大文字・小文字、ひらがな・カタカナの違いを無視する
-    public static string Normalize(string text)
-    {
-        var normalized = NameNormalizer.Normalize(text);
-        var builder = new StringBuilder(normalized.Length);
-        foreach (var c in normalized)
-        {
-            // カタカナ(ァ〜ヶ)をひらがなにそろえる
-            builder.Append(c is >= 'ァ' and <= 'ヶ' ? (char)(c - 0x60) : c);
-        }
-        return builder.ToString();
-    }
+    public static string Normalize(string text) => NameNormalizer.Fold(text);
 
     private static List<T> Query<T>(SqliteConnection connection, string sql, Func<SqliteDataReader, T> map)
     {

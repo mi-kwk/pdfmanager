@@ -59,7 +59,12 @@ public partial class TagItemSection(TagGroup group, IReadOnlyList<TagFilterItem>
     // 検索中でも、チェック・除外しているタグは残す
     public IReadOnlyList<TagFilterItem> VisibleItems => Search.Trim().Length == 0
         ? Items
-        : Items.Where(i => i.State != TagFilterState.None || DocumentSearchIndex.Normalize(i.Tag.Name).Contains(DocumentSearchIndex.Normalize(Search), StringComparison.Ordinal)).ToList();
+        : Items.Where(i => i.State != TagFilterState.None || Matches(i.Tag, DocumentSearchIndex.Normalize(Search))).ToList();
+
+    // 決定ログ DE-2: タグ名か別名で探す
+    public static bool Matches(TagSummary tag, string normalizedSearch) =>
+        DocumentSearchIndex.Normalize(tag.Name).Contains(normalizedSearch, StringComparison.Ordinal)
+        || tag.AliasNames.Any(a => DocumentSearchIndex.Normalize(a).Contains(normalizedSearch, StringComparison.Ordinal));
 
     public bool HasItems => Items.Count > 0;
 }

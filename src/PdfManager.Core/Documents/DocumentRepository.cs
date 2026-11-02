@@ -62,6 +62,8 @@ public enum TextSource
 
 public sealed record PageText(int PageNo, string Text, TextSource Source);
 
+public sealed record TitleEntry(string Title, IReadOnlyList<long> TagIds);
+
 public sealed class DocumentRepository(SqliteConnection connection)
 {
     public long Count()
@@ -80,6 +82,47 @@ public sealed class DocumentRepository(SqliteConnection connection)
     }
 
     // 同じファイル名の警告用(決定ログ C-7)。Windows と同じく大文字・小文字は区別しない
+    // 決定ログ DF-1: 取り込み画面のタイトルの候補に使う、登録済みの文書のタイトルと付いているタグ(新しい順)
+    public IReadOnlyList<TitleEntry> GetTitleEntries()
+    {
+        var tags = new Dictionary<string, List<long>>();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT document_id, tag_id FROM document_tags;";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var id = reader.GetString(0);
+                (tags.TryGetValue(id, out var list) ? list : tags[id] = []).Add(reader.GetInt64(1));
+            }
+        }
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT id, title FROM documents ORDER BY created_at DESC, id;";
+            using var reader = command.ExecuteReader();
+            var entries = new List<TitleEntry>();
+            while (reader.Read())
+            {
+                entries.Add(new TitleEntry(reader.GetString(1), tags.GetValueOrDefault(reader.GetString(0)) ?? []));
+            }
+            return entries;
+        }
+    }
+
+    // 決定ログ DD-8: 削除予定の PDF が登録済みの PDF と同じ内容かを見るため
+    public HashSet<string> GetFileHashes()
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT file_hash FROM documents;";
+        using var reader = command.ExecuteReader();
+        var hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+        {
+            hashes.Add(reader.GetString(0));
+        }
+        return hashes;
+    }
+
     public HashSet<string> GetFileNames()
     {
         using var command = connection.CreateCommand();

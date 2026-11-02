@@ -166,6 +166,18 @@
                     </StackPanel>
                     <ui:TextBlock Text="取り込み画面とタグ設定画面で、タグにチェックを付けるとその欄を 1 行に畳み、次の順位の欄をすぐ選べるようにします。畳んだ欄は押すと開き直せます。"
                                   TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <!-- 決定ログ DF-3: タイトルの候補に、PDF の文字から作ったものも出すか -->
+                    <CheckBox x:Name="UseTextTitleCandidatesBox" Content="タイトルの候補に PDF の文字も出す" Margin="0,10,0,0"
+                              Checked="OnUseTextTitleCandidatesChanged" Unchecked="OnUseTextTitleCandidatesChanged"
+                              AutomationProperties.Name="タイトルの候補に PDF の文字も出す" />
+                    <ui:TextBlock Text="オフのときは、登録済みのタイトルとファイル名だけを候補に出します(表紙のデザインで意味のない文字が出る PDF が多いとき)。"
+                                  TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <!-- 決定ログ DH-2: 1 ページ目の重複チェックの範囲 -->
+                    <CheckBox x:Name="DuplicateLooseMatchBox" Content="1 ページ目の重複チェックで、似ているものも出す" Margin="0,10,0,0"
+                              Checked="OnDuplicateLooseMatchChanged" Unchecked="OnDuplicateLooseMatchChanged"
+                              AutomationProperties.Name="1 ページ目の重複チェックで、似ているものも出す" />
+                    <ui:TextBlock Text="オフのときは、1 ページ目がほぼ同じものだけを出します。オンにすると、表紙のデザインが同じで文字が少し違うものなども出します。"
+                                  TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Border>
             <Border Grid.Column="2" Style="{StaticResource PaneBorder}">

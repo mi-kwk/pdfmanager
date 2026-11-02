@@ -5,6 +5,9 @@ using PdfManager.Core.Import;
 
 namespace PdfManager.App.ViewModels;
 
+// タイトルの候補 1 件(決定ログ DF-1)。IsRegistered は登録済みの PDF のタイトル(選ぶと末尾の番号を進める)
+public sealed record TitleSuggestion(string Text, string Detail, bool IsRegistered);
+
 public sealed record PrefixOption(FileNamePrefixChoice? Choice, string Label)
 {
     public static PrefixOption None { get; } = new(null, "(使わない)");
@@ -171,17 +174,36 @@ public partial class TagChoice : ObservableObject
     private readonly Action<TagChoice> _onToggled;
     private bool _loading;
 
-    public TagChoice(string key, string name, string detail, bool isNew, bool? isChecked, Action<TagChoice> onToggled)
+    private readonly Func<TagChoice, Task>? _onEditLinks;
+    private readonly Func<TagChoice, Task>? _onRename;
+
+    // onEditLinks・onRename は右クリックの「紐づけを変更」「名前を変更」(決定ログ DB-2)。null ならそのメニューを出さない
+    public TagChoice(string key, string name, string detail, bool isNew, bool? isChecked, Action<TagChoice> onToggled,
+        Func<TagChoice, Task>? onEditLinks = null, Func<TagChoice, Task>? onRename = null)
     {
         Key = key;
         Name = name;
         Detail = detail;
         IsNew = isNew;
         _onToggled = onToggled;
+        _onEditLinks = onEditLinks;
+        _onRename = onRename;
         _loading = true;
         IsChecked = isChecked;
         _loading = false;
     }
+
+    public bool CanEditLinks => _onEditLinks is not null;
+
+    public bool CanRename => _onRename is not null;
+
+    public bool HasMenu => CanEditLinks || CanRename;
+
+    [RelayCommand]
+    private Task EditLinksAsync() => _onEditLinks?.Invoke(this) ?? Task.CompletedTask;
+
+    [RelayCommand]
+    private Task RenameAsync() => _onRename?.Invoke(this) ?? Task.CompletedTask;
 
     public string Key { get; }
 

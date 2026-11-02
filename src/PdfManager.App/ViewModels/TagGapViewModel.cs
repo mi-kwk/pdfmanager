@@ -75,6 +75,16 @@ public sealed partial class TagGapViewModel : ObservableObject, IDisposable
         Directory.CreateDirectory(_previewFolder);
         Editor = new DocumentEditor(dialogs, showRatingAndMemo: false) { CollapseUpToRank = tagCollapseRank };
         Editor.Edited += () => HasChanges = true;
+        // 決定ログ DB-2: タグの欄から紐づけ・名前を直したら、すぐ保存して読み直す
+        Editor.CatalogWriter = action =>
+        {
+            using (var connection = PdfManagerDatabase.Open(_dataFolder.DatabasePath))
+            {
+                action(new CatalogRepository(connection));
+            }
+            LoadCatalog();
+            return true;
+        };
         Kinds =
         [
             new(TagGapKind.MissingGroup, "①グループのタグがない") { IsSelected = true },

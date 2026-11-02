@@ -215,6 +215,15 @@
                                     </DockPanel>
                                     <ui:TextBlock Text="全角・半角、大文字・小文字の違いは同じタグとして扱います。グループが違っても同じ名前のタグは作れません。" Style="{StaticResource Hint}" Margin="0,0,0,20" />
 
+                                    <!-- 決定ログ DE-4: 別名 -->
+                                    <ui:TextBlock Text="別名" Style="{StaticResource SectionTitle}" />
+                                    <DockPanel Margin="0,0,0,4">
+                                        <ui:Button DockPanel.Dock="Right" Content="別名を保存" Command="{Binding SaveTagAliasesCommand}" AutomationProperties.Name="別名を保存" Margin="8,0,0,0" />
+                                        <ui:TextBox AutomationProperties.Name="別名" PlaceholderText="例:とんこつ、豚骨" Text="{Binding EditTagAliases, UpdateSourceTrigger=PropertyChanged}" />
+                                    </DockPanel>
+                                    <ui:TextBlock Text="同じ意味の別の呼び方を「、」で区切って入れます。別名で検索・入力しても、このタグが見つかります。統合すると、消えるタグの名前が自動で入ります。"
+                                                  Style="{StaticResource Hint}" Margin="0,0,0,20" />
+
                                     <ui:TextBlock Text="タググループ" Style="{StaticResource SectionTitle}" />
                                     <DockPanel Margin="0,0,0,20">
                                         <ui:Button DockPanel.Dock="Right" Content="グループを変更" Command="{Binding ChangeTagGroupCommand}" Margin="8,0,0,0" />

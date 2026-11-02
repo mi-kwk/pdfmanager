@@ -76,12 +76,71 @@
             <!-- 左:取り込み待ちの一覧 -->
             <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
                 <DockPanel>
-                    <ui:TextBlock DockPanel.Dock="Top" Text="{Binding ListHeader}" FontTypography="BodyStrong" Margin="0,0,0,8" />
+                    <!-- 決定ログ DD-4: 同じ内容のものをまとめて削除予定へ -->
+                    <ui:Button DockPanel.Dock="Bottom" Content="{Binding DuplicateText}" Icon="{ui:SymbolIcon DocumentCopy24}" Margin="0,8,0,0"
+                               HorizontalAlignment="Stretch" Command="{Binding SendDuplicatesToDeleteCommand}" AutomationProperties.Name="同じ内容のものを削除予定へ"
+                               ToolTip="登録済みの PDF、または一覧のほかの PDF と同じ内容のものを、削除予定へ移します">
+                        <ui:Button.Style>
+                            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DuplicateCount}" Value="0">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ui:Button.Style>
+                    </ui:Button>
                     <ui:Button DockPanel.Dock="Bottom" Content="一覧から外す" Icon="{ui:SymbolIcon Dismiss24}" Margin="0,8,0,0"
                                HorizontalAlignment="Stretch" Command="{Binding RemoveSelectedCommand}" />
+                    <!-- 決定ログ DD-5: 保留の PDF は一覧の上にまとめ、初めは閉じておく(見出しを押すと開く) -->
                     <ListBox x:Name="ItemList" ItemsSource="{Binding Items}" SelectionMode="Extended"
                              SelectedItem="{Binding PrimarySelection}" SelectionChanged="OnSelectionChanged"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="取り込み待ち">
+                        <ListBox.InputBindings>
+                            <KeyBinding Key="Delete" Command="{Binding SendToDeleteCommand}" />
+                        </ListBox.InputBindings>
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="保留へ" Command="{Binding SendToHoldCommand}" />
+                                <MenuItem Header="削除予定へ(Delete)" Command="{Binding SendToDeleteCommand}" />
+                                <Separator />
+                                <MenuItem Header="一覧から外す" Command="{Binding RemoveSelectedCommand}" />
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.ContainerStyle>
+                                    <Style TargetType="GroupItem">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="GroupItem">
+                                                    <StackPanel>
+                                                        <ui:TextBlock Text="{Binding DataContext.ListHeader, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                      FontTypography="BodyStrong" Margin="4,8,0,4" />
+                                                        <ItemsPresenter />
+                                                    </StackPanel>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Name}" Value="保留">
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="GroupItem">
+                                                            <Expander IsExpanded="{Binding DataContext.IsHeldExpanded, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                      Header="{Binding DataContext.HeldHeader, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                                      AutomationProperties.Name="保留" Margin="0,0,0,4" Padding="0">
+                                                                <ItemsPresenter />
+                                                            </Expander>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </GroupStyle.ContainerStyle>
+                            </GroupStyle>
+                        </ListBox.GroupStyle>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <DockPanel Margin="0,4">
@@ -99,6 +158,9 @@
                                         <ui:TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                                         <ui:TextBlock Text="{Binding StatusText}" FontSize="12" TextTrimming="CharacterEllipsis"
                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <ui:TextBlock Text="{Binding HeldText}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding HeldOriginalPath}"
+                                                      Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                      Visibility="{Binding IsHeld, Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
                                 </DockPanel>
                             </DataTemplate>
@@ -118,9 +180,14 @@
 
             <!-- 右:入力欄 -->
             <Border Grid.Column="4" Style="{StaticResource PaneBorder}" Padding="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+                <ScrollViewer x:Name="EditorScroll" VerticalScrollBarVisibility="Auto" Padding="16,12">
                     <StackPanel>
                         <ui:TextBlock Text="{Binding SelectionText}" FontTypography="BodyStrong" TextWrapping="Wrap" />
+                        <!-- 決定ログ DH-4: 第 1 グループのタグを付けたら、同じタグの登録済み PDF と 1 ページ目の見た目を比べられる -->
+                        <ui:Button Content="1 ページ目で重複チェック" Icon="{ui:SymbolIcon DocumentCopy24}" Margin="0,8,0,0"
+                                   Command="{Binding CheckDuplicateCommand}" AutomationProperties.Name="1 ページ目で重複チェック"
+                                   ToolTip="第 1 グループのタグを付けると押せます。同じタグの登録済み PDF と、1 ページ目の見た目を比べます"
+                                   ToolTipService.ShowOnDisabled="True" />
 
                         <views:DocumentEditorView DataContext="{Binding Editor}" />
                         <ui:Button Content="前回と同じ" Icon="{ui:SymbolIcon ArrowRepeatAll24}" Margin="0,16,0,0"
@@ -135,6 +202,11 @@
         <DockPanel Grid.Row="3" Margin="16,12,16,16" LastChildFill="True">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="12,0,0,0">
                 <ui:Button Content="閉じる" Click="OnCloseClick" Margin="0,0,8,0" />
+                <!-- 決定ログ DD-3: 選んでいる PDF を保留・削除予定へ移す(元のフォルダからは移動する) -->
+                <ui:Button Content="保留へ" Icon="{ui:SymbolIcon Clock24}" Margin="0,0,8,0" Command="{Binding SendToHoldCommand}"
+                           ToolTip="選んでいる PDF を保留フォルダへ移します。あとでこの画面の「保留」から登録できます" />
+                <ui:Button Content="削除予定へ" Icon="{ui:SymbolIcon Delete24}" Margin="0,0,24,0" Command="{Binding SendToDeleteCommand}"
+                           ToolTip="選んでいる PDF を削除予定フォルダへ移します(Delete キーでも移せます)。メイン画面の「削除予定」で確認してから消します" />
                 <!-- 決定ログ R-5: 「すべて登録」は設定画面でオンにしたときだけ表示する -->
                 <ui:Button Content="{Binding RegisterAllText}" Icon="{ui:SymbolIcon SaveMultiple24}" Margin="0,0,8,0"
                            Command="{Binding RegisterAllCommand}" AutomationProperties.Name="すべて登録"

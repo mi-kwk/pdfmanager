@@ -14,8 +14,11 @@ public sealed record ViewPreferences(string Sort = "Registered", long? SortField
 
 // ShowRegisterAll: 取り込み画面に「すべて登録」ボタンも表示する(決定ログ R-5、U-17②。初めはオフ)
 // TagCollapseRank: タグの欄で、タグを選ぶと畳む順位の上限。0 は畳まない(決定ログ AA-1。初めは順位 1 だけ)
+// UseTextTitleCandidates: 取り込み画面のタイトルの候補に、PDF の文字から作ったものも出す(決定ログ DF-3。初めはオン)
+// DuplicateLooseMatch: 1 ページ目の重複チェックで「似ている」ものも出す(決定ログ DH-2。初めは「ほぼ同じ」だけ)
 public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<RecentLibrary> RecentLibraries, ViewPreferences? View = null,
-    bool ShowRegisterAll = false, int TagCollapseRank = AppSettings.DefaultTagCollapseRank, BackupPreferences? Backup = null)
+    bool ShowRegisterAll = false, int TagCollapseRank = AppSettings.DefaultTagCollapseRank, BackupPreferences? Backup = null,
+    string? ExportFolder = null, bool UseTextTitleCandidates = true, bool DuplicateLooseMatch = false)
 {
     public const int DefaultTagCollapseRank = 1;
 

@@ -18,7 +18,19 @@ public interface IUserDialogs
 
     // 決定ログ J-1: 保存していない変更があるときの確認
     Task<PendingChangesChoice> AskPendingChangesAsync();
+
+    // 3 つから選ぶ確認。1 = primary、2 = secondary、0 = close(閉じたときも 0)
+    Task<int> AskChoiceAsync(string title, string message, string primary, string secondary, string close);
+
+    // 1 行の文字の入力。キャンセルなら null
+    string? AskText(string title, string label, string initialText);
+
+    // 決定ログ DB-2: タグを選ぶ(紐づけ先など)。キャンセルなら null
+    IReadOnlyList<string>? ChooseTags(string title, string message, IReadOnlyList<TagPick> choices, IReadOnlyCollection<string> selectedKeys);
 }
+
+// タグを選ぶ画面の 1 件(Key は登録・タグ設定の画面でのタグのキー)
+public sealed record TagPick(string Key, string Name, string Detail);
 
 public sealed class WpfUiDialogs(Window? owner) : IUserDialogs
 {
@@ -64,5 +76,38 @@ public sealed class WpfUiDialogs(Window? owner) : IUserDialogs
             Wpf.Ui.Controls.MessageBoxResult.Secondary => PendingChangesChoice.Discard,
             _ => PendingChangesChoice.Cancel,
         };
+    }
+
+    public async Task<int> AskChoiceAsync(string title, string message, string primary, string secondary, string close)
+    {
+        var box = new Wpf.Ui.Controls.MessageBox
+        {
+            Owner = owner,
+            Title = title,
+            Content = message,
+            PrimaryButtonText = primary,
+            SecondaryButtonText = secondary,
+            CloseButtonText = close,
+        };
+        return await box.ShowDialogAsync() switch
+        {
+            Wpf.Ui.Controls.MessageBoxResult.Primary => 1,
+            Wpf.Ui.Controls.MessageBoxResult.Secondary => 2,
+            _ => 0,
+        };
+    }
+
+    public string? AskText(string title, string label, string initialText)
+    {
+        var window = new TextInputWindow(title, label, initialText) { Owner = owner };
+        window.ShowDialog();
+        return window.Result;
+    }
+
+    public IReadOnlyList<string>? ChooseTags(string title, string message, IReadOnlyList<TagPick> choices, IReadOnlyCollection<string> selectedKeys)
+    {
+        var window = new TagPickWindow(title, message, choices, selectedKeys) { Owner = owner };
+        window.ShowDialog();
+        return window.Result;
     }
 }

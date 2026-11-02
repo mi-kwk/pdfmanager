@@ -1,0 +1,125 @@
+<ui:FluentWindow x:Class="PdfManager.App.DuplicateCheckWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:vm="clr-namespace:PdfManager.App.ViewModels"
+                 mc:Ignorable="d"
+                 d:DataContext="{d:DesignInstance vm:DuplicateCheckViewModel}"
+                 Title="重複チェック"
+                 Width="1240" Height="820" MinWidth="900" MinHeight="560"
+                 WindowStartupLocation="CenterOwner"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+
+    <ui:FluentWindow.Resources>
+        <Style x:Key="PaneBorder" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12" />
+        </Style>
+    </ui:FluentWindow.Resources>
+
+    <!-- SC-17 重複チェック(決定ログ DH-6・DH-7) -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="重複チェック" />
+
+        <Grid Grid.Row="1" Margin="16,0,16,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280" MinWidth="220" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 左:第 1 グループのタグ(必須、複数可) -->
+            <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
+                <DockPanel>
+                    <ui:TextBlock DockPanel.Dock="Top" Text="第 1 グループのタグ(必須)" FontTypography="BodyStrong" Margin="0,0,0,6" />
+                    <ui:TextBox DockPanel.Dock="Top" Text="{Binding TagFilter, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="タグの絞り込み"
+                                Icon="{ui:SymbolIcon Filter24}" Margin="0,0,0,8" AutomationProperties.Name="タグの絞り込み" />
+                    <ui:Button DockPanel.Dock="Bottom" Content="重複を探す" Appearance="Primary" Icon="{ui:SymbolIcon Search24}" HorizontalAlignment="Stretch"
+                               Margin="0,8,0,0" Command="{Binding FindCommand}" AutomationProperties.Name="重複を探す" />
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Tags}" AutomationProperties.Name="第 1 グループのタグ">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,0,4" AutomationProperties.Name="{Binding Name}">
+                                        <StackPanel>
+                                            <ui:TextBlock Text="{Binding Name}" />
+                                            <ui:TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <!-- 右:1 ページ目が似ている組 -->
+            <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
+                <DockPanel>
+                    <ui:TextBlock DockPanel.Dock="Top" Text="{Binding Status}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Groups}" AutomationProperties.Name="似ている組">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Padding="0,10,0,10">
+                                        <StackPanel>
+                                            <DockPanel Margin="0,0,0,6">
+                                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                    <ui:Button Content="ビューアで比べる" Icon="{ui:SymbolIcon SplitVertical24}" Command="{Binding CompareCommand}" Margin="0,0,8,0" />
+                                                    <ui:Button Content="選んだものを削除" Icon="{ui:SymbolIcon Delete24}" Command="{Binding DeleteCommand}" Margin="0,0,8,0" />
+                                                    <ui:Button Content="重複ではない" Icon="{ui:SymbolIcon Checkmark24}" Command="{Binding NotDuplicateCommand}"
+                                                               ToolTip="この組を次から出さないようにします" />
+                                                </StackPanel>
+                                                <ui:TextBlock Text="{Binding Header}" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                                            </DockPanel>
+                                            <ItemsControl ItemsSource="{Binding Cards}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Width="200" Margin="0,0,12,0">
+                                                            <Border Height="250" CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="White">
+                                                                <Grid>
+                                                                    <Image Source="{Binding Match.Thumbnail}" Stretch="Uniform" Margin="4" />
+                                                                    <CheckBox IsChecked="{Binding IsChecked}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4" MinWidth="0"
+                                                                              AutomationProperties.Name="{Binding Match.Title, StringFormat={}{0}を選ぶ}" />
+                                                                </Grid>
+                                                            </Border>
+                                                            <ui:TextBlock Text="{Binding Match.Title}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                            <ui:TextBlock Text="{Binding Match.FileName}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" ToolTip="{Binding Match.FileName}" />
+                                                            <ui:TextBlock Text="{Binding Match.CreatedText}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,12,16,16">
+            <ui:Button Content="閉じる" Click="OnCloseClick" />
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

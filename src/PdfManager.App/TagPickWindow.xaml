@@ -1,0 +1,41 @@
+<ui:FluentWindow x:Class="PdfManager.App.TagPickWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="タグを選ぶ"
+                 Width="480" Height="560" MinHeight="360"
+                 WindowStartupLocation="CenterOwner"
+                 ShowInTaskbar="False"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <!-- 決定ログ DB-2: 登録・タグ設定の画面から、タグの紐づけ先を選び直す -->
+    <DockPanel>
+        <ui:TitleBar x:Name="TitleBarControl" DockPanel.Dock="Top" Title="タグを選ぶ" ShowMinimize="False" ShowMaximize="False" />
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,24">
+            <ui:Button Content="キャンセル" IsCancel="True" Click="OnCancelClick" Margin="0,0,8,0" />
+            <ui:Button Content="OK" Appearance="Primary" IsDefault="True" Click="OnOkClick" />
+        </StackPanel>
+        <DockPanel Margin="24,8,24,0">
+            <ui:TextBlock x:Name="MessageText" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8" />
+            <ui:TextBox x:Name="FilterBox" DockPanel.Dock="Top" PlaceholderText="絞り込み" Icon="{ui:SymbolIcon Filter24}" Margin="0,0,0,8"
+                        AutomationProperties.Name="タグの絞り込み" TextChanged="OnFilterChanged" />
+            <Border BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" CornerRadius="6" Padding="8">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="ChoiceList" AutomationProperties.Name="選べるタグ">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,0,4" AutomationProperties.Name="{Binding Name}">
+                                    <StackPanel>
+                                        <ui:TextBlock Text="{Binding Name}" />
+                                        <ui:TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                </CheckBox>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+        </DockPanel>
+    </DockPanel>
+</ui:FluentWindow>

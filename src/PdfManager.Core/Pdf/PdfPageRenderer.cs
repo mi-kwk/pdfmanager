@@ -16,12 +16,29 @@ public static class PdfPageRenderer
         await image.AsStreamForRead().CopyToAsync(output);
     }
 
+    // 決定ログ DD-8: 削除予定の確認画面のプレビュー。ページ数と、指定したページの JPEG を返す(ページは 0 から)
+    public static async Task<(int PageCount, byte[] Jpeg)> RenderPageToJpegAsync(string pdfPath, int pageIndex, uint maxWidth, uint maxHeight)
+    {
+        await using var input = File.OpenRead(pdfPath);
+        var document = await PdfDocument.LoadFromStreamAsync(input.AsRandomAccessStream());
+        var count = (int)document.PageCount;
+        using var image = await RenderPageAsync(document, (uint)Math.Clamp(pageIndex, 0, Math.Max(0, count - 1)), maxWidth, maxHeight, BitmapEncoder.JpegEncoderId);
+        using var memory = new MemoryStream();
+        await image.AsStreamForRead().CopyToAsync(memory);
+        return (count, memory.ToArray());
+    }
+
     internal static async Task<InMemoryRandomAccessStream> RenderFirstPageAsync(string pdfPath, uint maxWidth, uint maxHeight, Guid encoderId)
     {
         // LoadFromFileAsync だとファイルのロックが解放されるタイミングを制御できないため、自前のストリームで読む
         await using var input = File.OpenRead(pdfPath);
         var document = await PdfDocument.LoadFromStreamAsync(input.AsRandomAccessStream());
-        using var page = document.GetPage(0);
+        return await RenderPageAsync(document, 0, maxWidth, maxHeight, encoderId);
+    }
+
+    private static async Task<InMemoryRandomAccessStream> RenderPageAsync(PdfDocument document, uint pageIndex, uint maxWidth, uint maxHeight, Guid encoderId)
+    {
+        using var page = document.GetPage(pageIndex);
 
         var scale = Math.Min(maxWidth / page.Size.Width, maxHeight / page.Size.Height);
         var options = new PdfPageRenderOptions

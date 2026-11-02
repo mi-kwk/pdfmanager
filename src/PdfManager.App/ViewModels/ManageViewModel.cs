@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using PdfManager.App.Services;
 using PdfManager.Core.Catalog;
 using PdfManager.Core.Database;
+using PdfManager.Core.Search;
 using PdfManager.Core.Storage;
 using PdfManager.Core.Text;
 
@@ -272,6 +273,10 @@ public partial class ManageViewModel : ObservableObject
     [ObservableProperty]
     public partial GroupChoice? EditTagGroup { get; set; }
 
+    // 決定ログ DE-4: 別名(「、」区切り)
+    [ObservableProperty]
+    public partial string EditTagAliases { get; set; } = "";
+
     [ObservableProperty]
     public partial IReadOnlyList<TagSummary> MergeTargets { get; set; } = [];
 
@@ -305,6 +310,7 @@ public partial class ManageViewModel : ObservableObject
     partial void OnSelectedTagChanged(TagSummary? value)
     {
         EditTagName = value?.Name ?? "";
+        EditTagAliases = value?.AliasText ?? "";
         EditTagGroup = value is null ? null : GroupChoices.FirstOrDefault(c => c.Id == value.GroupId);
         MergeTargets = value is null ? [] : _allTags.Where(t => t.Id != value.Id).ToList();
         MergeTarget = null;
@@ -355,6 +361,16 @@ public partial class ManageViewModel : ObservableObject
     [RelayCommand]
     private async Task AddTagAsync()
     {
+        // 決定ログ DE-3: ひらがな・カタカナだけが違うタグが同じグループにあれば確かめる
+        var folded = DocumentSearchIndex.Normalize(NewTagName);
+        if (folded.Length > 0 && NameNormalizer.Normalize(NewTagName) is var key
+            && _allTags.FirstOrDefault(t => t.GroupId == NewTagGroup.Id && NameNormalizer.Normalize(t.Name) != key
+                && (DocumentSearchIndex.Normalize(t.Name) == folded || t.AliasNames.Any(a => DocumentSearchIndex.Normalize(a) == folded))) is { } similar
+            && !await _dialogs.ConfirmAsync("似た名前のタグがあります",
+                $"「{similar.Name}」があります(ひらがな・カタカナの違いだけです)。それでも「{NameNormalizer.Clean(NewTagName)}」を作りますか?\n同じ意味なら、「{similar.Name}」の別名に入れることもできます。", "作る"))
+        {
+            return;
+        }
         long id = 0;
         if (await RunAsync(c => id = c.AddTag(NewTagName, NewTagGroup.Id)))
         {
@@ -368,6 +384,17 @@ public partial class ManageViewModel : ObservableObject
     private async Task RenameTagAsync()
     {
         if (SelectedTag is { } tag && await RunAsync(c => c.RenameTag(tag.Id, EditTagName)))
+        {
+            ReloadAll(selectTagId: tag.Id);
+        }
+    }
+
+    // 決定ログ DE-4: 別名を保存する(「、」やカンマで区切る)
+    [RelayCommand]
+    private async Task SaveTagAliasesAsync()
+    {
+        var names = EditTagAliases.Split(['、', ',', '，'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (SelectedTag is { } tag && await RunAsync(c => c.SetAliases(tag.Id, names)))
         {
             ReloadAll(selectTagId: tag.Id);
         }
@@ -406,7 +433,7 @@ public partial class ManageViewModel : ObservableObject
             return;
         }
         if (await _dialogs.ConfirmAsync("タグの統合",
-                $"「{source.Name}」を「{target.Name}」に統合しますか?\n「{source.Name}」が付いた文書 {source.UsageCount} 件には「{target.Name}」が付き、「{source.Name}」は削除されます。紐づけも引き継ぎます。",
+                $"「{source.Name}」を「{target.Name}」に統合しますか?\n「{source.Name}」が付いた文書 {source.UsageCount} 件には「{target.Name}」が付き、「{source.Name}」は削除されます。紐づけも引き継ぎます。\n「{source.Name}」は「{target.Name}」の別名として残るので、その名前で検索・入力しても「{target.Name}」が見つかります。",
                 "統合する")
             && await RunAsync(c => c.MergeTags(source.Id, target.Id)))
         {
@@ -582,7 +609,8 @@ public partial class ManageViewModel : ObservableObject
         var filter = NameNormalizer.Normalize(TagFilter);
         VisibleTags = _allTags
             .Where(t => TagGroupFilter is null || TagGroupFilter == AllGroups || t.GroupId == TagGroupFilter.Id)
-            .Where(t => filter.Length == 0 || NameNormalizer.Normalize(t.Name).Contains(filter, StringComparison.Ordinal))
+            .Where(t => filter.Length == 0 || NameNormalizer.Normalize(t.Name).Contains(filter, StringComparison.Ordinal)
+                || t.AliasNames.Any(a => NameNormalizer.Normalize(a).Contains(filter, StringComparison.Ordinal)))
             .ToList();
         SelectedTag = VisibleTags.FirstOrDefault(t => t.Id == selectTagId);
     }

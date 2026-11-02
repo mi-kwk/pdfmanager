@@ -5,6 +5,7 @@ using PdfManager.App.Services;
 using PdfManager.Core.Catalog;
 using PdfManager.Core.Database;
 using PdfManager.Core.Documents;
+using PdfManager.Core.Import;
 using PdfManager.Core.Library;
 using PdfManager.Core.Search;
 using PdfManager.Core.Settings;
@@ -121,6 +122,16 @@ public partial class MainViewModel : ObservableObject
             HasChanges = true;
             SaveMessage = null;
         };
+        // 決定ログ DB-2: タグ設定の画面から紐づけ・名前を直したら、すぐ保存して、編集中の内容は残したままタグの定義を読み直す
+        Editor.CatalogWriter = action =>
+        {
+            using (var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath))
+            {
+                action(new CatalogRepository(connection));
+            }
+            ReloadCatalog();
+            return true;
+        };
         _suspendSearch = true;
         SelectedRatingFilter = RatingChoices[0];
         SortDescending = view.Descending;
@@ -193,7 +204,7 @@ public partial class MainViewModel : ObservableObject
             ? TagFilters.Where(t => t.State != TagFilterState.None && (t.Tag.GroupId is not { } g || !pinned.Contains(g))).ToList()
             : TagFilters
                 .Where(t => t.State != TagFilterState.None
-                            || DocumentSearchIndex.Normalize(t.Tag.Name).Contains(search, StringComparison.Ordinal)
+                            || TagItemSection.Matches(t.Tag, search)
                             || DocumentSearchIndex.Normalize(t.Tag.GroupLabel).Contains(search, StringComparison.Ordinal))
                 .ToList();
         OtherTagHint = search.Length == 0
@@ -843,14 +854,7 @@ public partial class MainViewModel : ObservableObject
             var fields = catalog.GetFields().Where(f => f.Type != FieldType.Select).ToList();
             var tags = catalog.GetTags();
             var groups = catalog.GetGroups();
-            var states = TagFilters.ToDictionary(t => t.Tag.Id, t => t.State);
-            TagFilters = tags.Select(t => new TagFilterItem(t, states.GetValueOrDefault(t.Id), ApplySearch)).ToList();
-            // 決定ログ Q-14: 項目(左に常に表示するタググループ)
-            var searches = ItemSections.ToDictionary(s => s.Group.Id, s => s.Search);
-            ItemSections = groups.Where(g => g.IsPinned).OrderBy(g => g.PinOrder).ThenBy(g => g.Id)
-                .Select(g => new TagItemSection(g, TagFilters.Where(t => t.Tag.GroupId == g.Id).ToList()) { Search = searches.GetValueOrDefault(g.Id, "") })
-                .ToList();
-            UpdateOtherTags();
+            LoadTagFilters(tags, groups);
 
             var currentSort = SelectedSort is { } sort ? (sort.Key, sort.FieldId)
                 : initialView is not null && Enum.TryParse<SortKey>(initialView.Sort, out var key) ? (key, initialView.SortFieldId)
@@ -880,8 +884,67 @@ public partial class MainViewModel : ObservableObject
         UpdateStorageFilters();
         LoadSavedSearches();
         DocumentCount = _index.Count;
+        UpdateSetAsideCounts();
         ApplySearch();
         LoadDetails();
+    }
+
+    // ==== 保留・削除予定の件数(決定ログ DD-6・DD-7) ====
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HeldButtonText), nameof(HasHeld))]
+    public partial int HeldCount { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DeleteButtonText), nameof(HasDeletePending))]
+    public partial int DeletePendingCount { get; set; }
+
+    public string HeldButtonText => $"保留({HeldCount})";
+
+    public bool HasHeld => HeldCount > 0;
+
+    public string DeleteButtonText => $"削除予定({DeletePendingCount} 件)";
+
+    public bool HasDeletePending => DeletePendingCount > 0;
+
+    public void UpdateSetAsideCounts()
+    {
+        var store = new SetAsideStore(DataFolder);
+        HeldCount = store.Count(SetAsideKind.Hold);
+        DeletePendingCount = store.Count(SetAsideKind.Delete);
+    }
+
+    private void LoadTagFilters(IReadOnlyList<TagSummary> tags, IReadOnlyList<TagGroup> groups)
+    {
+        var states = TagFilters.ToDictionary(t => t.Tag.Id, t => t.State);
+        TagFilters = tags.Select(t => new TagFilterItem(t, states.GetValueOrDefault(t.Id), ApplySearch)).ToList();
+        // 決定ログ Q-14: 項目(左に常に表示するタググループ)
+        var searches = ItemSections.ToDictionary(s => s.Group.Id, s => s.Search);
+        ItemSections = groups.Where(g => g.IsPinned).OrderBy(g => g.PinOrder).ThenBy(g => g.Id)
+            .Select(g => new TagItemSection(g, TagFilters.Where(t => t.Tag.GroupId == g.Id).ToList()) { Search = searches.GetValueOrDefault(g.Id, "") })
+            .ToList();
+        UpdateOtherTags();
+    }
+
+    // 決定ログ DB-2: タグの定義だけを読み直す(詳細で編集中の内容と、今の検索結果はそのまま)
+    private void ReloadCatalog()
+    {
+        _suspendSearch = true;
+        try
+        {
+            using var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath);
+            var catalog = new CatalogRepository(connection);
+            var fields = catalog.GetFields().Where(f => f.Type != FieldType.Select).ToList();
+            var tags = catalog.GetTags();
+            var groups = catalog.GetGroups();
+            LoadTagFilters(tags, groups);
+            Editor.SetCatalog(fields, groups, tags, new DocumentRepository(connection).GetFileNames());
+            _index = DocumentSearchIndex.Load(connection);
+        }
+        finally
+        {
+            _suspendSearch = false;
+        }
     }
 
     // 決定ログ I-5: 入力するたびにすぐ結果を更新する
@@ -1159,13 +1222,26 @@ public partial class MainViewModel : ObservableObject
     }
 
     // 決定ログ K-5: 確認してすぐ削除する。beforeDelete でビューアのタブを閉じてもらう
-    public async Task DeleteSelectedAsync(Action<IReadOnlyCollection<string>> beforeDelete)
+    public Task DeleteSelectedAsync(Action<IReadOnlyCollection<string>> beforeDelete) =>
+        DeleteDocumentsAsync(_detailItems.Select(i => i.Detail).ToList(), beforeDelete);
+
+    // 決定ログ DH-6: 重複チェックの画面から、選んだ文書を削除する。消したら true
+    public async Task<bool> DeleteDocumentsAsync(IReadOnlyList<string> documentIds, Action<IReadOnlyCollection<string>> beforeDelete)
     {
-        var targets = _detailItems.Select(i => i.Detail).ToList();
+        List<DocumentDetail> details;
+        using (var connection = PdfManagerDatabase.Open(DataFolder.DatabasePath))
+        {
+            details = new DocumentRepository(connection).GetDetails(documentIds).ToList();
+        }
+        return await DeleteDocumentsAsync(details, beforeDelete);
+    }
+
+    private async Task<bool> DeleteDocumentsAsync(List<DocumentDetail> targets, Action<IReadOnlyCollection<string>> beforeDelete)
+    {
         // 決定ログ S-10: つながっていないサブの PDF はごみ箱に入れられないため、削除できない
         if (targets.Count == 0 || !await EnsureEditableAsync(targets.Select(t => t.Id), "削除できません"))
         {
-            return;
+            return false;
         }
         var remover = new DocumentRemover(DataFolder);
         var storages = StorageIdsOf(targets.Select(t => t.Id));
@@ -1176,7 +1252,7 @@ public partial class MainViewModel : ObservableObject
         if (!await _dialogs.ConfirmAsync("削除の確認",
                 $"{subject}を削除しますか?\n\n{detail}\nタイトル・タグ・項目・メモなどの情報は元に戻せません。", "削除する"))
         {
-            return;
+            return false;
         }
 
         var ids = targets.Select(t => t.Id).ToList();
@@ -1200,14 +1276,19 @@ public partial class MainViewModel : ObservableObject
             }
         });
 
-        HasChanges = false;
-        SelectedIds = [];
+        // 詳細で開いている文書を消したときは、選択と編集中の内容を外す
+        if (SelectedIds.Any(ids.Contains))
+        {
+            HasChanges = false;
+            SelectedIds = [];
+        }
         Refresh();
         ShowListMessage("削除", $"{deleted} 件を削除しました。" + (remover.UsesRecycleBin && deleted > 0 ? "PDF 本体は Windows のごみ箱にあります。" : ""));
         if (problems.Count > 0)
         {
             await _dialogs.ShowErrorAsync("次の PDF は削除できませんでした(ほかのアプリで開いている可能性があります)。\n\n" + string.Join("\n", problems.Take(MaxReportedProblems)), "削除できませんでした");
         }
+        return deleted > 0;
     }
 
     private static string FormatSize(long bytes) => bytes switch

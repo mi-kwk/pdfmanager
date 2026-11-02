@@ -1,0 +1,129 @@
+<ui:FluentWindow x:Class="PdfManager.App.TitleBatchEditWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:vm="clr-namespace:PdfManager.App.ViewModels"
+                 mc:Ignorable="d"
+                 d:DataContext="{d:DesignInstance vm:TitleBatchEditViewModel}"
+                 Title="タイトルの付け直し(編集)"
+                 Width="1320" Height="860" MinWidth="1000" MinHeight="560"
+                 WindowStartupLocation="CenterOwner"
+                 ShowInTaskbar="False"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <Style x:Key="PaneBorder" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="8" />
+        </Style>
+    </ui:FluentWindow.Resources>
+
+    <!-- SC-19 タイトルの付け直し(編集、決定ログ DI-3〜DI-8) -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="タイトルの付け直し(編集)" ShowMinimize="False" />
+
+        <!-- 決定ログ DI-6: 並べ替えと番号 -->
+        <DockPanel Grid.Row="1" Margin="16,0,16,8">
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                <ui:Button Content="上へ" Icon="{ui:SymbolIcon ArrowUp24}" Click="OnUpClick" Margin="0,0,8,0" ToolTip="選んだ行を 1 つ上へ(≡ をドラッグしても並べ替えられます)" />
+                <ui:Button Content="下へ" Icon="{ui:SymbolIcon ArrowDown24}" Click="OnDownClick" Margin="0,0,24,0" />
+                <ui:TextBlock Text="名前" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <ui:TextBox Text="{Binding NumberStem, UpdateSourceTrigger=PropertyChanged}" Width="260" AutomationProperties.Name="番号の前の名前" Margin="0,0,12,0" />
+                <ui:TextBlock Text="始めの番号" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <ui:TextBox Text="{Binding StartNumber, UpdateSourceTrigger=PropertyChanged}" Width="70" AutomationProperties.Name="始めの番号" Margin="0,0,12,0" />
+                <ui:Button Content="上から順に番号を振る" Icon="{ui:SymbolIcon NumberSymbol24}" Click="OnNumberClick" AutomationProperties.Name="上から順に番号を振る"
+                           ToolTip="選んだ行(1 件以下なら全部)に、上から順に「名前 + 番号」を入れます" />
+            </StackPanel>
+        </DockPanel>
+
+        <Grid Grid.Row="2" Margin="16,0,16,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="560" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="460" MinWidth="320" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Style="{StaticResource PaneBorder}">
+                <ListBox x:Name="RowList" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}" SelectionMode="Extended" AllowDrop="True"
+                         Drop="OnDrop" DragOver="OnDragOver" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="付け直す PDF">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="0,2">
+                                <ui:TextBlock DockPanel.Dock="Left" Text="≡" FontSize="20" VerticalAlignment="Center" Margin="0,0,8,0" Cursor="SizeAll"
+                                              PreviewMouseLeftButtonDown="OnHandleMouseDown" ToolTip="ドラッグして並べ替え" />
+                                <Border DockPanel.Dock="Left" Width="48" Height="64" Margin="0,0,10,0" CornerRadius="3" BorderThickness="1"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="White">
+                                    <Image Source="{Binding Thumbnail}" Stretch="Uniform" />
+                                </Border>
+                                <ui:TextBlock DockPanel.Dock="Right" Text="⚠ 重なり" Foreground="{DynamicResource SystemFillColorCriticalBrush}" VerticalAlignment="Center"
+                                              Margin="8,0,0,0" Visibility="{Binding IsConflict, Converter={StaticResource BoolToVisibility}}" />
+                                <Grid VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:TextBlock Grid.Column="0" Text="{Binding CurrentTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding CurrentTitle}" />
+                                    <ui:TextBlock Grid.Column="1" Text="→" Margin="8,0" VerticalAlignment="Center" />
+                                    <ui:TextBox Grid.Column="2" Text="{Binding NewTitle, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="新しいタイトル(空なら変えない)"
+                                                AutomationProperties.Name="{Binding CurrentTitle, StringFormat={}{0}の新しいタイトル}">
+                                        <ui:TextBox.Style>
+                                            <Style TargetType="ui:TextBox" BasedOn="{StaticResource {x:Type ui:TextBox}}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsConflict}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                        <Setter Property="BorderThickness" Value="2" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ui:TextBox.Style>
+                                    </ui:TextBox>
+                                </Grid>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <!-- 決定ログ DI-3: 選んだ PDF を大きく表示して、中身を確かめながら直す -->
+            <Border Grid.Column="2" Style="{StaticResource PaneBorder}" Padding="12">
+                <DockPanel>
+                    <ui:TextBlock DockPanel.Dock="Top" Text="{Binding Selected.CurrentTitle}" FontTypography="BodyStrong" TextTrimming="CharacterEllipsis" Margin="0,0,0,8" />
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+                        <ui:Button Icon="{ui:SymbolIcon ChevronLeft24}" Command="{Binding PreviousPageCommand}" AutomationProperties.Name="前のページ" Margin="0,0,8,0" />
+                        <ui:TextBlock Text="{Binding PageText}" VerticalAlignment="Center" MinWidth="90" TextAlignment="Center" />
+                        <ui:Button Icon="{ui:SymbolIcon ChevronRight24}" Command="{Binding NextPageCommand}" AutomationProperties.Name="次のページ" Margin="8,0,0,0" />
+                    </StackPanel>
+                    <Image Source="{Binding Preview}" Stretch="Uniform" />
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <DockPanel Grid.Row="3" Margin="16,12,16,16">
+            <ui:TextBlock DockPanel.Dock="Left" Text="{Binding CountText}" VerticalAlignment="Center" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="閉じる" Click="OnCloseClick" Margin="0,0,8,0" />
+                <ui:Button Content="保存" Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Command="{Binding SaveCommand}" AutomationProperties.Name="保存" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

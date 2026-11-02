@@ -10,6 +10,19 @@ public static partial class NameNormalizer
 
     public static string Normalize(string name) => Clean(name.Normalize(NormalizationForm.FormKC)).ToLowerInvariant();
 
+    // Normalize に加えて、ひらがな・カタカナの違いも吸収する(検索、決定ログ I-1。タイトルのシリーズ、決定ログ DG-2)
+    public static string Fold(string text)
+    {
+        var normalized = Normalize(text);
+        var builder = new StringBuilder(normalized.Length);
+        foreach (var c in normalized)
+        {
+            // カタカナ(ァ〜ヶ)をひらがなにそろえる
+            builder.Append(c is >= 'ァ' and <= 'ヶ' ? (char)(c - 0x60) : c);
+        }
+        return builder.ToString();
+    }
+
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();
 }
