@@ -49,6 +49,7 @@ public partial class MainWindow : FluentWindow
         }
         _storage = new StorageAccess(storage);
         _viewModel = new MainViewModel(library.DataFolder, _storage, new WpfUiDialogs(this), libraries.View, libraries.SaveView);
+        _viewModel.RecordUsage = libraries.RecordUsage;
         // ドライブをつないだ・外したときは、少し待ってからサブを探し直す
         _deviceChangeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
         _deviceChangeTimer.Tick += async (_, _) =>
@@ -534,6 +535,34 @@ public partial class MainWindow : FluentWindow
         _duplicateCheck.Show();
     }
 
+    // 決定ログ DA-6・DA-9: 分析の画面。PDF を開いたり検索したりできるよう、メイン画面を操作できる状態で開く(1 つだけ)
+    private AnalyticsWindow? _analytics;
+
+    private void OnAnalyticsClick(object sender, RoutedEventArgs e)
+    {
+        if (_analytics is not null)
+        {
+            _analytics.Activate();
+            return;
+        }
+        _analytics = new AnalyticsWindow(_viewModel.DataFolder, OpenFromAnalytics, (keywords, tag) =>
+        {
+            _viewModel.SearchFromAnalytics(keywords, tag);
+            Activate();
+        }) { Owner = this };
+        _analytics.Closed += (_, _) => _analytics = null;
+        _analytics.Show();
+    }
+
+    private void OpenFromAnalytics(string documentId)
+    {
+        using var connection = PdfManager.Core.Database.PdfManagerDatabase.Open(_viewModel.DataFolder.DatabasePath);
+        if (new PdfManager.Core.Documents.DocumentRepository(connection).GetDetails([documentId]).FirstOrDefault() is { } detail)
+        {
+            OpenInViewer([(detail.Id, detail.Title, detail.FileName)]);
+        }
+    }
+
     // 決定ログ DM-1: タグの一括付与の画面。右クリックから開いたときは、選んでいる PDF にチェックを付けて始める
     private void OnTagBulkClick(object sender, RoutedEventArgs e) => OpenTagBulk([]);
 
@@ -658,6 +687,7 @@ public partial class MainWindow : FluentWindow
         }
         var settings = new SettingsWindow(_library, _libraries, _storage) { Owner = this };
         settings.ShowDialog();
+        _viewModel.RecordUsage = _libraries.RecordUsage;
         if (settings.SelectedLibrary is { } library)
         {
             App.CurrentApp.SwitchLibrary(library);

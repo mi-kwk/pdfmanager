@@ -24,7 +24,7 @@ public sealed class PdfManagerDatabaseTests : IDisposable
 
         Assert.Equal(
             ["document_field_values", "document_links", "document_tags", "documents", "field_options",
-             "fields", "library_meta", "not_duplicate_pairs", "page_fingerprints", "page_texts", "saved_searches", "set_aside_files", "sub_libraries", "tag_aliases", "tag_groups", "tag_links", "tags", "version_series"],
+             "fields", "library_meta", "not_duplicate_pairs", "page_fingerprints", "page_texts", "saved_searches", "search_events", "set_aside_files", "sub_libraries", "tag_aliases", "tag_groups", "tag_links", "tags", "version_series", "view_events"],
             tables);
         Assert.Equal(PdfManagerDatabase.SchemaVersion, PdfManagerDatabase.GetUserVersion(connection));
     }

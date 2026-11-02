@@ -377,6 +377,13 @@
                        ToolTip="第 1 グループのタグを選んで、1 ページ目が同じ登録済み PDF を探します"
                        AutomationProperties.Name="重複チェック"
                        Margin="0,0,8,0" />
+            <!-- 決定ログ DA-6: 検索や開いた回数の傾向を見る画面 -->
+            <ui:Button Content="分析"
+                       Icon="{ui:SymbolIcon DataBarVertical24}"
+                       Click="OnAnalyticsClick"
+                       ToolTip="よく開く PDF、検索の傾向、0 件だった検索などを見ます"
+                       AutomationProperties.Name="分析"
+                       Margin="0,0,8,0" />
             <!-- 決定ログ DM-1: 複数の PDF にタグをまとめて付ける・外す画面 -->
             <ui:Button Content="タグの一括付与"
                        Icon="{ui:SymbolIcon TagMultiple24}"

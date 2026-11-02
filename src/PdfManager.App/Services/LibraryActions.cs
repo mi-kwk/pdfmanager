@@ -121,6 +121,15 @@ public sealed class LibraryActions(AppSettingsStore store)
         store.Save(Settings);
     }
 
+    // 決定ログ DA-5: 検索・閲覧の記録を残すか
+    public bool RecordUsage => Settings.RecordUsage;
+
+    public void SetRecordUsage(bool value)
+    {
+        Settings = Settings with { RecordUsage = value };
+        store.Save(Settings);
+    }
+
     // USB への出力で前回選んだ出力先(次に開いたときの初めの値)
     public string? ExportFolder => Settings.ExportFolder;
 
