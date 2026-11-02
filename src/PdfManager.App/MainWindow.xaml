@@ -348,12 +348,41 @@
                        Click="OnImportClick"
                        ToolTip="PDF を選んで取り込みます(ファイルやフォルダを画面にドラッグ&amp;ドロップしても取り込めます)"
                        Margin="0,0,8,0" />
+            <!-- 決定ログ DD-6・DD-7: 保留・削除予定にある PDF(あるときだけ表示) -->
+            <ui:Button Content="{Binding HeldButtonText}"
+                       Icon="{ui:SymbolIcon Clock24}"
+                       Click="OnHeldClick"
+                       ToolTip="保留にした PDF を、取り込み画面で開きます"
+                       AutomationProperties.Name="保留"
+                       Visibility="{Binding HasHeld, Converter={StaticResource BoolToVisibility}}"
+                       Margin="0,0,8,0" />
+            <ui:Button Content="{Binding DeleteButtonText}"
+                       Icon="{ui:SymbolIcon Delete24}"
+                       Click="OnDeleteReviewClick"
+                       ToolTip="削除予定にした PDF を確認して、PC のごみ箱へ移します"
+                       AutomationProperties.Name="削除予定"
+                       Visibility="{Binding HasDeletePending, Converter={StaticResource BoolToVisibility}}"
+                       Margin="0,0,8,0" />
             <!-- 決定ログ BC-1: タグの付け漏れを探して直す画面 -->
             <ui:Button Content="付け漏れ確認"
                        Icon="{ui:SymbolIcon TagSearch24}"
                        Click="OnTagGapClick"
                        ToolTip="タグが付いていない PDF や、紐づくタグが付いていない PDF を探して直します"
                        AutomationProperties.Name="付け漏れ確認"
+                       Margin="0,0,8,0" />
+            <!-- 決定ログ DH-6: 1 ページ目の見た目で、登録済みの重複を探す画面 -->
+            <ui:Button Content="重複チェック"
+                       Icon="{ui:SymbolIcon DocumentCopy24}"
+                       Click="OnDuplicateCheckClick"
+                       ToolTip="第 1 グループのタグを選んで、1 ページ目が同じ登録済み PDF を探します"
+                       AutomationProperties.Name="重複チェック"
+                       Margin="0,0,8,0" />
+            <!-- 決定ログ DI-1: 複数の PDF のタイトルをまとめて付け直す画面 -->
+            <ui:Button Content="タイトルの付け直し"
+                       Icon="{ui:SymbolIcon Rename24}"
+                       Click="OnTitleBatchClick"
+                       ToolTip="第 1 グループのタグを選んで、複数の PDF のタイトルをまとめて付け直します"
+                       AutomationProperties.Name="タイトルの付け直し"
                        Margin="0,0,8,0" />
             <ui:Button Content="項目・タグ"
                        Icon="{ui:SymbolIcon Tag24}"
@@ -579,6 +608,9 @@
                                 Title="{Binding ListMessageTitle}" Message="{Binding ListMessage}" IsOpen="{Binding IsListMessageOpen, Mode=TwoWay}" />
                     <DockPanel Grid.Row="1" Margin="4,0,4,8">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <!-- 決定ログ CC-1: 今の検索結果を USB へ出力 -->
+                            <ui:Button Icon="{ui:SymbolIcon ArrowExportLtr24}" Click="OnExportResultsClick" Margin="0,0,12,0"
+                                       ToolTip="USB へ出力(今の検索結果、または選んでいる PDF)" AutomationProperties.Name="USB へ出力" />
                             <ComboBox ItemsSource="{Binding SortOptions}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedSort}"
                                       MinWidth="140" AutomationProperties.Name="並び替え" />
                             <ui:Button Content="{Binding SortDirectionText}" Command="{Binding ToggleSortDirectionCommand}" Margin="6,0,12,0"
@@ -632,6 +664,12 @@
                                     <MenuItem Header="版としてまとめる" Click="OnGroupVersionsClick">
                                         <MenuItem.Icon>
                                             <ui:SymbolIcon Symbol="Stack24" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <!-- 決定ログ CC-1: USB への出力 -->
+                                    <MenuItem Header="USB へ出力" Click="OnExportSelectedClick">
+                                        <MenuItem.Icon>
+                                            <ui:SymbolIcon Symbol="ArrowExportLtr24" />
                                         </MenuItem.Icon>
                                     </MenuItem>
                                     <!-- 決定ログ S-3: 移す先は開くたびに並べる -->

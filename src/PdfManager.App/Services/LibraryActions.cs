@@ -103,6 +103,33 @@ public sealed class LibraryActions(AppSettingsStore store)
         store.Save(Settings);
     }
 
+    // 決定ログ DF-3: タイトルの候補に PDF の文字から作ったものも出すか
+    public bool UseTextTitleCandidates => Settings.UseTextTitleCandidates;
+
+    public void SetUseTextTitleCandidates(bool value)
+    {
+        Settings = Settings with { UseTextTitleCandidates = value };
+        store.Save(Settings);
+    }
+
+    // 決定ログ DH-2: 1 ページ目の重複チェックで「似ている」ものも出すか
+    public bool DuplicateLooseMatch => Settings.DuplicateLooseMatch;
+
+    public void SetDuplicateLooseMatch(bool value)
+    {
+        Settings = Settings with { DuplicateLooseMatch = value };
+        store.Save(Settings);
+    }
+
+    // USB への出力で前回選んだ出力先(次に開いたときの初めの値)
+    public string? ExportFolder => Settings.ExportFolder;
+
+    public void SetExportFolder(string folder)
+    {
+        Settings = Settings with { ExportFolder = folder };
+        store.Save(Settings);
+    }
+
     public void Forget(string libraryFilePath)
     {
         Settings = AppSettingsStore.Forget(Settings, libraryFilePath);

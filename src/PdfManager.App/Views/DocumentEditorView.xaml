@@ -32,8 +32,53 @@
 
     <StackPanel IsEnabled="{Binding HasTargets}">
         <ui:TextBlock Text="タイトル" Style="{StaticResource SectionTitle}" />
-        <ComboBox IsEditable="True" ItemsSource="{Binding TitleCandidates}"
-                  Text="{Binding EditorTitle, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="タイトル" />
+        <!-- 決定ログ DF-1〜DF-3: 入力するたびに、登録済みのタイトル(第 1 グループのタグが同じものを先)と、この PDF のファイル名・文字を候補に出す。
+             ↑↓ で選んで Enter で入れる。▼ は入力に関係なくすべての候補 -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ui:TextBox x:Name="TitleBox" Grid.Column="0" Text="{Binding EditorTitle, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="タイトル"
+                        PreviewKeyDown="OnTitleKeyDown" LostKeyboardFocus="OnTitleLostFocus" />
+            <ui:Button Grid.Column="1" Margin="4,0,0,0" Padding="8,6" Icon="{ui:SymbolIcon ChevronDown24}" Click="OnShowAllTitlesClick"
+                       AutomationProperties.Name="タイトルの候補" ToolTip="タイトルの候補(登録済みのタイトル、ファイル名など)"
+                       Visibility="{Binding UseTitleSuggestions, Converter={StaticResource BoolToVisibility}}" />
+            <Popup x:Name="TitlePopup" Grid.Column="0" PlacementTarget="{Binding ElementName=TitleBox}" Placement="Bottom" StaysOpen="False"
+                   IsOpen="{Binding IsTitleSuggestionsOpen}" AllowsTransparency="True">
+                <Border Background="{DynamicResource ApplicationBackgroundBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="4" MinWidth="{Binding ActualWidth, ElementName=TitleBox}" MaxHeight="360">
+                    <ListBox x:Name="TitleSuggestionList" ItemsSource="{Binding TitleSuggestions}" AutomationProperties.Name="タイトルの候補の一覧"
+                             PreviewMouseLeftButtonUp="OnTitleSuggestionClick" Focusable="False">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,1">
+                                    <ui:TextBlock Text="{Binding Text}" TextTrimming="CharacterEllipsis" />
+                                    <ui:TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+            </Popup>
+        </Grid>
+        <!-- 決定ログ DG-1: 登録済みのタイトルと重なったら、次の番号を案内する -->
+        <Border Margin="0,6,0,0" Padding="10,6" CornerRadius="6" Background="{DynamicResource SystemFillColorCautionBackgroundBrush}">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding TitleDuplicateText}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <DockPanel>
+                <ui:Button DockPanel.Dock="Right" Content="この番号にする" Command="{Binding UseNextTitleCommand}" Margin="8,0,0,0"
+                           VerticalAlignment="Center" AutomationProperties.Name="この番号にする" />
+                <ui:TextBlock Text="{Binding TitleDuplicateText}" TextWrapping="Wrap" FontSize="12" VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
         <ui:TextBlock Text="(複数の値)入力すると、選択中の全件が同じタイトルになります" Style="{StaticResource Hint}"
                       Visibility="{Binding IsTitleMixed, Converter={StaticResource BoolToVisibility}}" />
         <ui:TextBlock Text="空のまま保存・登録すると「未入力」になります。" Style="{StaticResource Hint}" Margin="0,4,0,0" />

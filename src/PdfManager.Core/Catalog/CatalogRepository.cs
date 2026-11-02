@@ -215,6 +215,9 @@ public sealed class CatalogRepository(SqliteConnection connection)
             r => (ChildId: r.GetInt64(0), ParentId: r.GetInt64(1), ParentName: r.GetString(2)))
             .ToLookup(x => x.ChildId);
 
+        var aliases = Query("SELECT tag_id, name FROM tag_aliases ORDER BY normalized_name;", r => (TagId: r.GetInt64(0), Name: r.GetString(1)))
+            .ToLookup(x => x.TagId, x => x.Name);
+
         return Query(
             """
             SELECT t.id, t.name, (SELECT COUNT(*) FROM document_tags d WHERE d.tag_id = t.id), t.group_id, g.name
@@ -225,7 +228,8 @@ public sealed class CatalogRepository(SqliteConnection connection)
                 var links = parents[r.GetInt64(0)].ToList();
                 return new TagSummary(r.GetInt64(0), r.GetString(1), r.GetInt64(2),
                     r.IsDBNull(3) ? null : r.GetInt64(3), r.IsDBNull(4) ? null : r.GetString(4),
-                    links.Select(l => l.ParentId).ToList(), links.Select(l => l.ParentName).ToList());
+                    links.Select(l => l.ParentId).ToList(), links.Select(l => l.ParentName).ToList(),
+                    aliases[r.GetInt64(0)].ToList());
             });
     }
 
@@ -236,6 +240,7 @@ public sealed class CatalogRepository(SqliteConnection connection)
         {
             throw new CatalogException("同じ名前のタグがすでにあります(タググループが違っても同じ名前は使えません)。");
         }
+        EnsureNotAlias(cleaned, exceptTagId: null);
         var id = InsertTag(cleaned, groupId);
         if (parentIds is { Count: > 0 })
         {
@@ -244,11 +249,12 @@ public sealed class CatalogRepository(SqliteConnection connection)
         return id;
     }
 
-    // 取り込み時の入力用(決定ログ A-3): 同じ名前のタグがあればそれを使い(グループ・紐づけは変えない)、なければ作る(Q-12)
+    // 取り込み時の入力用(決定ログ A-3): 同じ名前のタグがあればそれを使い(グループ・紐づけは変えない)、なければ作る(Q-12)。
+    // 別名と同じ名前なら、その別名を持つ正式なタグを使う(決定ログ DE-2)
     public long GetOrCreateTag(string name, long? groupId = null, IReadOnlyCollection<long>? parentIdsForNewTag = null)
     {
         var cleaned = ValidateName(name, "タグ名");
-        if (FindTagId(cleaned) is { } existing)
+        if ((FindTagId(cleaned) ?? FindAliasOwner(cleaned)) is { } existing)
         {
             return existing;
         }
@@ -307,17 +313,29 @@ public sealed class CatalogRepository(SqliteConnection connection)
         {
             throw new CatalogException("同じ名前のタグがすでにあります。1 つにまとめる場合は「統合」を使ってください。");
         }
-        Execute("UPDATE tags SET name = $name, normalized_name = $normalized WHERE id = $id;",
+        EnsureNotAlias(cleaned, exceptTagId: tagId);
+        using var transaction = connection.BeginTransaction();
+        // 自分の別名と同じ名前に変えたときは、その別名はいらなくなる
+        Execute("DELETE FROM tag_aliases WHERE tag_id = $id AND normalized_name = $normalized;", transaction,
+            ("$id", tagId), ("$normalized", NameNormalizer.Normalize(cleaned)));
+        Execute("UPDATE tags SET name = $name, normalized_name = $normalized WHERE id = $id;", transaction,
             ("$name", cleaned), ("$normalized", NameNormalizer.Normalize(cleaned)), ("$id", tagId));
+        transaction.Commit();
     }
 
+    // 決定ログ DE-1: 統合すると、消えるタグの名前と別名は、統合先の別名として残す(その名前で検索・入力しても統合先が見つかる)
     public void MergeTags(long sourceTagId, long targetTagId)
     {
         if (sourceTagId == targetTagId)
         {
             throw new CatalogException("統合先には別のタグを選んでください。");
         }
+        var sourceName = GetTags().FirstOrDefault(t => t.Id == sourceTagId)?.Name ?? throw new CatalogException("タグが見つかりません。");
         using var transaction = connection.BeginTransaction();
+        Execute("UPDATE tag_aliases SET tag_id = $target WHERE tag_id = $source;", transaction, ("$target", targetTagId), ("$source", sourceTagId));
+        // tags の normalized_name と同じ値になるが、このあと消すので重ならない
+        Execute("INSERT INTO tag_aliases (tag_id, name, normalized_name) VALUES ($target, $name, $normalized) ON CONFLICT(normalized_name) DO NOTHING;", transaction,
+            ("$target", targetTagId), ("$name", sourceName), ("$normalized", NameNormalizer.Normalize(sourceName)));
         Execute("INSERT OR IGNORE INTO document_tags (document_id, tag_id) SELECT document_id, $target FROM document_tags WHERE tag_id = $source;",
             transaction, ("$target", targetTagId), ("$source", sourceTagId));
         // 紐づけも統合先に引き継ぐ(統合先のグループで合わなくなるものは外れる)
@@ -331,6 +349,55 @@ public sealed class CatalogRepository(SqliteConnection connection)
     }
 
     public void DeleteTag(long tagId) => Execute("DELETE FROM tags WHERE id = $id;", ("$id", tagId));
+
+    // 決定ログ DE-4: 別名をまとめて置き換える。別名はタグ名やほかのタグの別名と重ならない
+    public void SetAliases(long tagId, IEnumerable<string> names)
+    {
+        var cleaned = new List<string>();
+        foreach (var name in names.Where(n => NameNormalizer.Clean(n).Length > 0))
+        {
+            var alias = ValidateName(name, "別名");
+            var normalized = NameNormalizer.Normalize(alias);
+            if (cleaned.Any(c => NameNormalizer.Normalize(c) == normalized))
+            {
+                continue;
+            }
+            if (FindTagId(alias) is { } owner)
+            {
+                throw new CatalogException(owner == tagId
+                    ? $"「{alias}」はこのタグの名前です。別名には別の名前を入れてください。"
+                    : $"「{alias}」というタグがあります。1 つにまとめる場合は「統合」を使ってください。");
+            }
+            EnsureNotAlias(alias, exceptTagId: tagId);
+            cleaned.Add(alias);
+        }
+        using var transaction = connection.BeginTransaction();
+        Execute("DELETE FROM tag_aliases WHERE tag_id = $id;", transaction, ("$id", tagId));
+        foreach (var alias in cleaned)
+        {
+            Execute("INSERT INTO tag_aliases (tag_id, name, normalized_name) VALUES ($id, $name, $normalized);", transaction,
+                ("$id", tagId), ("$name", alias), ("$normalized", NameNormalizer.Normalize(alias)));
+        }
+        transaction.Commit();
+    }
+
+    // 別名と同じ名前のタグは作れない(別名を持つタグの名前を知らせる)
+    private void EnsureNotAlias(string name, long? exceptTagId)
+    {
+        if (FindAliasOwner(name) is { } owner && owner != exceptTagId)
+        {
+            var ownerName = GetTags().First(t => t.Id == owner).Name;
+            throw new CatalogException($"「{NameNormalizer.Clean(name)}」は「{ownerName}」の別名です。そのタグを使うか、先に別名を外してください。");
+        }
+    }
+
+    private long? FindAliasOwner(string name)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT tag_id FROM tag_aliases WHERE normalized_name = $normalized;";
+        command.Parameters.AddWithValue("$normalized", NameNormalizer.Normalize(name));
+        return command.ExecuteScalar() as long?;
+    }
 
     // ---- 共通 ----
 

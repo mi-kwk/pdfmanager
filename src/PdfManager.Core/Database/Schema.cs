@@ -6,6 +6,41 @@ namespace PdfManager.Core.Database;
 // docs/03_データ設計.md に対応。全文検索用の FTS5 索引は M3(検索)で追加する。
 internal static class Schema
 {
+    // 1 ページ目の見た目の指紋(決定ログ DH-1)と、「重複ではない」とした組(決定ログ DH-7。first_id < second_id)
+    public const string V9 = """
+        CREATE TABLE page_fingerprints (
+            document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+            data        BLOB NOT NULL
+        );
+        CREATE TABLE not_duplicate_pairs (
+            first_id  TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            second_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            PRIMARY KEY (first_id, second_id),
+            CHECK (first_id < second_id)
+        );
+        CREATE INDEX ix_not_duplicate_second ON not_duplicate_pairs(second_id);
+        """;
+
+    // タグの別名(決定ログ DE-1〜DE-4)と、保留・削除予定のファイルの記録(決定ログ DD-1〜DD-10)。
+    // 別名は統合で消えたタグの名前などで、検索や登録画面で正式なタグとして扱う。名前はタグ名・ほかの別名と重ならない。
+    // set_aside_files は、保留・削除予定のフォルダへ移したファイルの元の場所(フォルダの中身が正で、記録はその補足)
+    public const string V8 = """
+        CREATE TABLE tag_aliases (
+            id              INTEGER PRIMARY KEY,
+            tag_id          INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            name            TEXT NOT NULL,
+            normalized_name TEXT NOT NULL UNIQUE
+        );
+        CREATE INDEX ix_tag_aliases_tag ON tag_aliases(tag_id);
+        CREATE TABLE set_aside_files (
+            kind          TEXT NOT NULL CHECK (kind IN ('hold', 'delete')),
+            file_name     TEXT NOT NULL COLLATE NOCASE,
+            original_path TEXT NOT NULL,
+            moved_at      TEXT NOT NULL,
+            PRIMARY KEY (kind, file_name)
+        );
+        """;
+
     // タググループ・順位・紐づけ(決定ログ R-11、Q-1〜Q-14)。
     // 選択肢型の項目は「順位 1 のタググループ(項目として左に表示)」に、選択肢はそのグループのタグに、文書の値はタグの付与に変える。
     // 属性(tag_attributes)は紐づけに変え、属性の付いたタグは「(項目名)に紐づくタグ」(順位 2)に入れる(Q-11)

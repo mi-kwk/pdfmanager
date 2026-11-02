@@ -25,6 +25,15 @@ public partial class ImportItem(string sourcePath) : EditableDocument
     // 登録後にごみ箱へ移すファイル
     public IReadOnlyList<string> Originals => OriginalSources.Count > 0 ? OriginalSources : [SourcePath];
 
+    // 決定ログ DD-5: 保留フォルダにある PDF(一覧の上の「保留」にまとめて表示する)
+    public bool IsHeld { get; init; }
+
+    // 保留・削除予定へ移す前の場所(保留の PDF のとき。記録がなければ null)
+    public string? HeldOriginalPath { get; init; }
+
+    // 一覧のまとまり(保留 / 取り込み待ち)
+    public string GroupName => IsHeld ? "保留" : "取り込み待ち";
+
     public override string DisplayName => Path.GetFileName(SourcePath);
 
     public override string OriginalFileName => DisplayName;
@@ -63,11 +72,15 @@ public partial class ImportItem(string sourcePath) : EditableDocument
         _ => $"✕ {Message}",
     };
 
+    // 保留の PDF は、元の場所も出す
+    public string? HeldText => IsHeld && HeldOriginalPath is { } original ? $"元の場所:{Path.GetDirectoryName(original)}" : null;
+
     public void ApplyPrepared(PreparedImport prepared)
     {
         Prepared = prepared;
         Message = prepared.Message;
-        Title = prepared.TitleCandidates.FirstOrDefault() ?? "";
+        // 決定ログ DF-3: タイトルの初めの値はファイル名(PDF の文字は、表紙のデザインなどで意味のない文字列になることがあるため候補にだけ出す)
+        Title = Path.GetFileNameWithoutExtension(SourcePath);
         Preview = prepared.PreviewImagePath is { } path ? LoadImage(path) : null;
         Status = prepared.Status switch
         {
@@ -94,4 +107,12 @@ public partial class ImportItem(string sourcePath) : EditableDocument
         image.Freeze();
         return image;
     }
+}
+
+// 決定ログ DH-4: 1 ページ目が似ている登録済みの PDF が見つかったときに選ぶこと
+public enum DuplicateChoice
+{
+    Continue,
+    Delete,
+    Hold,
 }

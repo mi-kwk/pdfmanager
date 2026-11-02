@@ -70,7 +70,17 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,0,2" AutomationProperties.Name="{Binding Name}">
+                                            <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,0,2" AutomationProperties.Name="{Binding Name}"
+                                                      ContextMenuService.IsEnabled="{Binding HasMenu}">
+                                                <!-- 決定ログ DB-2: 右クリックで紐づけ・名前を直す -->
+                                                <CheckBox.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="紐づけを変更…" Command="{Binding EditLinksCommand}"
+                                                                  Visibility="{Binding CanEditLinks, Converter={StaticResource BoolToVisibility}}" />
+                                                        <MenuItem Header="名前を変更…" Command="{Binding RenameCommand}"
+                                                                  Visibility="{Binding CanRename, Converter={StaticResource BoolToVisibility}}" />
+                                                    </ContextMenu>
+                                                </CheckBox.ContextMenu>
                                                 <StackPanel>
                                                     <ui:TextBlock Text="{Binding Label}" />
                                                     <ui:TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}">

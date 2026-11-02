@@ -1,0 +1,137 @@
+<ui:FluentWindow x:Class="PdfManager.App.DeleteReviewWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:vm="clr-namespace:PdfManager.App.ViewModels"
+                 mc:Ignorable="d"
+                 d:DataContext="{d:DesignInstance vm:DeleteReviewViewModel}"
+                 Title="削除予定の確認"
+                 Width="1240" Height="820" MinWidth="900" MinHeight="560"
+                 WindowStartupLocation="CenterOwner"
+                 ShowInTaskbar="False"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <Style x:Key="PaneBorder" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12" />
+        </Style>
+        <Style x:Key="Hint" TargetType="ui:TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+    </ui:FluentWindow.Resources>
+
+    <!-- SC-15 削除予定の確認(決定ログ DD-7・DD-8) -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="削除予定の確認" ShowMinimize="False" />
+
+        <DockPanel Grid.Row="1" Margin="16,0,16,12">
+            <ui:TextBlock DockPanel.Dock="Right" Text="{Binding CountText}" FontTypography="BodyStrong" VerticalAlignment="Center" />
+            <ui:TextBlock Style="{StaticResource Hint}" VerticalAlignment="Center"
+                          Text="取り込み画面で「削除予定へ」移した PDF です。チェックしたものを「削除」で PC のごみ箱へ移すか、「保留へ」で保留に戻せます。選んだ PDF は右に大きく表示します。" />
+        </DockPanel>
+
+        <Grid Grid.Row="2" Margin="16,0,16,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="420" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="440" MinWidth="320" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 左:プレビューの一覧(チェックは初めすべて付いている) -->
+            <Border Grid.Column="0" Style="{StaticResource PaneBorder}" Padding="4">
+                <ListBox x:Name="ItemList" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="削除予定の PDF">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Width="176" Margin="2">
+                                <Border Height="176" CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="White">
+                                    <Grid>
+                                        <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="4" />
+                                        <CheckBox IsChecked="{Binding IsChecked}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4" MinWidth="0"
+                                                  AutomationProperties.Name="{Binding FileName, StringFormat={}{0}を削除する}" />
+                                    </Grid>
+                                </Border>
+                                <ui:TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" Margin="0,4,0,0" ToolTip="{Binding FileName}" />
+                                <ui:TextBlock Text="{Binding OriginalText}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding File.OriginalPath}"
+                                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <ui:TextBlock Text="{Binding Mark}" FontSize="11" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                <ui:TextBlock Text="{Binding SimilarText}" FontSize="11" TextWrapping="Wrap" ToolTip="{Binding SimilarText}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <!-- 右:選んだ PDF の大きなプレビュー(ページ送り) -->
+            <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
+                <DockPanel>
+                    <ui:TextBlock DockPanel.Dock="Top" Text="{Binding Selected.FileName}" FontTypography="BodyStrong" TextTrimming="CharacterEllipsis" Margin="0,0,0,8" />
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+                        <ui:Button Icon="{ui:SymbolIcon ChevronLeft24}" Command="{Binding PreviousPageCommand}" AutomationProperties.Name="前のページ" Margin="0,0,8,0" />
+                        <ui:TextBlock Text="{Binding PageText}" VerticalAlignment="Center" MinWidth="90" TextAlignment="Center" />
+                        <ui:Button Icon="{ui:SymbolIcon ChevronRight24}" Command="{Binding NextPageCommand}" AutomationProperties.Name="次のページ" Margin="8,0,0,0" />
+                    </StackPanel>
+                    <!-- 決定ログ DH-5: 1 ページ目が似ている登録済みの PDF を並べて表示する -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Image Grid.Column="0" Source="{Binding Preview}" Stretch="Uniform" />
+                        <Border Grid.Column="1" Width="190" Margin="8,0,0,0" Padding="8" CornerRadius="6" BorderThickness="1"
+                                BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+                                Visibility="{Binding Selected.HasMatch, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}">
+                            <StackPanel>
+                                <ui:TextBlock Text="1 ページ目が似ている登録済みの PDF" FontSize="12" FontTypography="BodyStrong" TextWrapping="Wrap" Margin="0,0,0,6" />
+                                <Border Background="White" BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                                    <Image Source="{Binding Selected.Match.Thumbnail}" Stretch="Uniform" MaxHeight="240" />
+                                </Border>
+                                <ui:TextBlock Text="{Binding Selected.Match.Title}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                <ui:TextBlock Text="{Binding Selected.Match.SimilarityText}" FontSize="12" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <DockPanel Grid.Row="3" Margin="16,12,16,16" LastChildFill="True">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="12,0,0,0">
+                <ui:Button Content="1 ページ目で重複チェック" Icon="{ui:SymbolIcon DocumentCopy24}" Command="{Binding CheckDuplicatesCommand}" Margin="0,0,24,0"
+                           AutomationProperties.Name="1 ページ目で重複チェック" ToolTip="チェックした PDF を、登録済みのすべての PDF と 1 ページ目の見た目で比べます" />
+                <ui:Button Content="すべて選ぶ" Icon="{ui:SymbolIcon CheckboxChecked24}" Command="{Binding CheckAllCommand}" Margin="0,0,8,0" />
+                <ui:Button Content="すべて外す" Icon="{ui:SymbolIcon CheckboxUnchecked24}" Command="{Binding UncheckAllCommand}" Margin="0,0,8,0" />
+                <ui:Button Content="保留へ" Icon="{ui:SymbolIcon Clock24}" Command="{Binding HoldCommand}" Margin="0,0,8,0"
+                           ToolTip="チェックした PDF を保留へ移します(取り込み画面の「保留」から登録できます)" />
+                <ui:Button Content="削除" Appearance="Danger" Icon="{ui:SymbolIcon Delete24}" Command="{Binding DeleteCommand}" Margin="0,0,24,0"
+                           ToolTip="チェックした PDF を PC のごみ箱へ移します" />
+                <ui:Button Content="閉じる" Click="OnCloseClick" />
+            </StackPanel>
+            <ui:InfoBar IsOpen="{Binding IsResultOpen, Mode=TwoWay}" IsClosable="True" Title="結果"
+                        Message="{Binding ResultMessage}" Severity="{Binding ResultSeverity}" />
+        </DockPanel>
+    </Grid>
+</ui:FluentWindow>

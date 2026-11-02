@@ -235,6 +235,14 @@ public sealed class ImportService(DataFolder dataFolder)
             {
                 warning = $"サムネイルを作成できませんでした: {ex.Message}";
             }
+            try
+            {
+                // 決定ログ DH-1: 1 ページ目の見た目の指紋(作れなければ、重複チェックのときにもう一度作る)
+                await Search.DuplicateFinder.SaveFromThumbnailAsync(dataFolder, documentId);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+            }
         }
         return new RegisteredImport(documentId, warning, WasDuplicate: false);
     }

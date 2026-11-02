@@ -16,13 +16,25 @@ public partial class ImportWindow : FluentWindow
     private bool _closeConfirmed;
 
     public ImportWindow(DataFolder dataFolder, IEnumerable<string> paths, PdfManager.Core.Documents.DocumentDetail? newVersionOf = null, bool showRegisterAll = false,
-        int tagCollapseRank = PdfManager.Core.Settings.AppSettings.DefaultTagCollapseRank)
+        int tagCollapseRank = PdfManager.Core.Settings.AppSettings.DefaultTagCollapseRank, bool useTextTitleCandidates = true, bool duplicateLoose = false)
     {
         InitializeComponent();
         WindowPlacement.KeepOnScreen(this);
         _dialogs = new WpfUiDialogs(this);
-        _viewModel = new ImportViewModel(dataFolder, _dialogs, paths, newVersionOf, showRegisterAll, tagCollapseRank);
+        _viewModel = new ImportViewModel(dataFolder, _dialogs, paths, newVersionOf, showRegisterAll, tagCollapseRank, useTextTitleCandidates, duplicateLoose);
+        // 決定ログ DH-4: 1 ページ目が似ている登録済みの PDF を並べて見せる
+        _viewModel.ShowDuplicates = (item, matches) =>
+        {
+            var window = new DuplicateResultWindow(item.DisplayName, item.Preview, matches, item.IsHeld) { Owner = this };
+            window.ShowDialog();
+            return window.Choice;
+        };
         DataContext = _viewModel;
+        // 決定ログ DD-5: 保留の PDF を一覧の上にまとめる
+        System.Windows.Data.CollectionViewSource.GetDefaultView(_viewModel.Items).GroupDescriptions
+            .Add(new System.Windows.Data.PropertyGroupDescription(nameof(ImportItem.GroupName)));
+        // 決定ログ DC-1: 登録して次の PDF に移ったら、右の入力欄を一番上へ戻す
+        _viewModel.EditorScrollResetRequested += () => EditorScroll.ScrollToTop();
         // 決定ログ Y-1: 画像・ZIP は「画像から PDF 作成」の画面で PDF にしてから一覧に入れる
         _viewModel.CreatePdfsFromImages = (images, zips, workFolder) =>
         {

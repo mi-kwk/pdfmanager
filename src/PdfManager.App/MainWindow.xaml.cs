@@ -273,7 +273,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
         var storageId = _viewModel.StorageIdsOf([previous.Id]).GetValueOrDefault(previous.Id);
-        var window = new ImportWindow(_viewModel.DataFolder, [dialog.FileName], previous, _libraries.ShowRegisterAll, _libraries.TagCollapseRank) { Owner = this };
+        var window = new ImportWindow(_viewModel.DataFolder, [dialog.FileName], previous, _libraries.ShowRegisterAll, _libraries.TagCollapseRank, _libraries.UseTextTitleCandidates, _libraries.DuplicateLooseMatch) { Owner = this };
         window.ShowDialog();
         if (window.LastRegisteredId is { } added && storageId is not null)
         {
@@ -498,8 +498,123 @@ public partial class MainWindow : FluentWindow
         {
             return;
         }
-        new ImportWindow(_viewModel.DataFolder, paths, showRegisterAll: _libraries.ShowRegisterAll, tagCollapseRank: _libraries.TagCollapseRank) { Owner = this }.ShowDialog();
+        new ImportWindow(_viewModel.DataFolder, paths, showRegisterAll: _libraries.ShowRegisterAll, tagCollapseRank: _libraries.TagCollapseRank,
+            useTextTitleCandidates: _libraries.UseTextTitleCandidates, duplicateLoose: _libraries.DuplicateLooseMatch) { Owner = this }.ShowDialog();
         _viewModel.Refresh();
+    }
+
+    // 決定ログ DD-6: 保留の PDF だけを取り込み画面で開く(ファイルは選ばない)
+    private void OnHeldClick(object sender, RoutedEventArgs e) => OpenImportWindow([]);
+
+    // 決定ログ DD-7: 削除予定の確認画面
+    private void OnDeleteReviewClick(object sender, RoutedEventArgs e)
+    {
+        new DeleteReviewWindow(_viewModel.DataFolder, _libraries.DuplicateLooseMatch) { Owner = this }.ShowDialog();
+        _viewModel.UpdateSetAsideCounts();
+    }
+
+    // 決定ログ DH-6: 重複チェックの画面。ビューアで見比べられるよう、メイン画面を操作できる状態で開く(1 つだけ)
+    private DuplicateCheckWindow? _duplicateCheck;
+
+    private async void OnDuplicateCheckClick(object sender, RoutedEventArgs e)
+    {
+        if (_duplicateCheck is not null)
+        {
+            _duplicateCheck.Activate();
+            return;
+        }
+        if (!await _viewModel.ResolvePendingChangesAsync())
+        {
+            return;
+        }
+        _duplicateCheck = new DuplicateCheckWindow(_viewModel.DataFolder, _libraries.DuplicateLooseMatch, CompareAsync,
+            ids => _viewModel.DeleteDocumentsAsync(ids, closing => _viewer?.CloseDocuments(closing))) { Owner = this };
+        _duplicateCheck.Closed += (_, _) => _duplicateCheck = null;
+        _duplicateCheck.Show();
+    }
+
+    // 決定ログ DI-1: タイトルの付け直しの画面
+    private async void OnTitleBatchClick(object sender, RoutedEventArgs e)
+    {
+        if (!await _viewModel.ResolvePendingChangesAsync())
+        {
+            return;
+        }
+        var window = new TitleBatchWindow(_viewModel.DataFolder, _storage) { Owner = this };
+        window.ShowDialog();
+        if (window.Saved)
+        {
+            _viewModel.Refresh();
+        }
+    }
+
+    // ==== USB への出力(F-50、決定ログ CC-1〜CC-9) ====
+
+    private void OnExportSelectedClick(object sender, RoutedEventArgs e) => OpenExport(preferSelected: true);
+
+    private void OnExportResultsClick(object sender, RoutedEventArgs e) => OpenExport(preferSelected: false);
+
+    private async void OpenExport(bool preferSelected)
+    {
+        if (!await _viewModel.ResolvePendingChangesAsync())
+        {
+            return;
+        }
+        // 決定ログ CC-7: 一覧に出ているもの(画面の並び)だけを出す
+        var results = _viewModel.Results.Select(c => c.Entry.Id).ToList();
+        var selectedSet = DocumentList.SelectedItems.Cast<DocumentCard>().Select(c => c.Entry.Id).ToHashSet();
+        var selected = results.Where(selectedSet.Contains).ToList();
+        IReadOnlyList<Core.Catalog.TagGroup> groups;
+        using (var connection = Core.Database.PdfManagerDatabase.Open(_viewModel.DataFolder.DatabasePath))
+        {
+            groups = new Core.Catalog.CatalogRepository(connection).GetGroups();
+        }
+        var window = new ExportWindow(selected, results, preferSelected, groups, _libraries.ExportFolder) { Owner = this };
+        if (window.ShowDialog() != true)
+        {
+            return;
+        }
+        _libraries.SetExportFolder(window.Folder);
+        var dialogs = new WpfUiDialogs(this);
+        var (ids, folder, options) = (window.DocumentIds, window.Folder, window.Options);
+        var plan = await _storage.RunAsync(s => Core.Export.ExportService.Plan(s, ids, folder));
+        if (plan.Count == 0)
+        {
+            await dialogs.ShowErrorAsync("出せる PDF がありません(保存先のサブライブラリがつながっていません)。", "USB へ出力");
+            return;
+        }
+        if (!plan.HasEnoughSpace)
+        {
+            await dialogs.ShowErrorAsync($"出力先の空き容量が足りません。\n出す PDF:{BackupActions.FormatSize(plan.Bytes)}\n空き容量:{BackupActions.FormatSize(plan.FreeBytes ?? 0)}", "USB へ出力");
+            return;
+        }
+
+        var progress = new ProgressWindow("USB へ出力しています") { Owner = this };
+        var task = _storage.RunAsync(s => Core.Export.ExportService.Run(s, ids, folder, options, DateTimeOffset.Now, progress.Progress, progress.Cancellation));
+        progress.ShowUntil(task);
+        Core.Export.ExportResult result;
+        try
+        {
+            result = await task;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            await dialogs.ShowErrorAsync($"出力できませんでした。作りかけのものは消しました。\n\n{ex.Message}", "USB へ出力");
+            return;
+        }
+        if (result.Cancelled)
+        {
+            await dialogs.ShowErrorAsync("途中で止めました。作りかけのものは消しました。", "USB へ出力");
+            return;
+        }
+        // 決定ログ CC-8: 出せなかったものは理由と一緒に知らせる
+        var message = $"{result.Exported:N0} 件を出力しました。\n{result.OutputPath}"
+            + (result.Skipped.Count > 0 ? $"\n\n次の {result.Skipped.Count:N0} 件は出せませんでした。\n" + string.Join("\n", result.Skipped.Take(5)) + (result.Skipped.Count > 5 ? $"\nほか {result.Skipped.Count - 5:N0} 件" : "") : "");
+        if (await dialogs.ConfirmAsync("USB へ出力しました", message, "エクスプローラーで開く"))
+        {
+            var arguments = options.Zip ? $"/select,\"{result.OutputPath}\"" : $"\"{result.OutputPath}\"";
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", arguments) { UseShellExecute = true });
+        }
     }
 
     // 決定ログ BC-1: タグの付け漏れ確認。閉じたら一覧と件数を読み直す

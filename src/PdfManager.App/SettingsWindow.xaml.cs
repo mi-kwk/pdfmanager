@@ -56,6 +56,8 @@ public partial class SettingsWindow : FluentWindow
         CurrentFolder.Text = current.RootFolder;
         ShowRegisterAllBox.IsChecked = libraries.ShowRegisterAll;
         TagCollapseRankBox.SelectedIndex = libraries.TagCollapseRank;
+        UseTextTitleCandidatesBox.IsChecked = libraries.UseTextTitleCandidates;
+        DuplicateLooseMatchBox.IsChecked = libraries.DuplicateLooseMatch;
         LoadBackup();
         RefreshRecent();
         Loaded += async (_, _) =>
@@ -149,6 +151,24 @@ public partial class SettingsWindow : FluentWindow
         if (IsLoaded)
         {
             _libraries.SetShowRegisterAll(ShowRegisterAllBox.IsChecked == true);
+        }
+    }
+
+    // 決定ログ DH-2: 切り替えたらすぐ保存する
+    private void OnDuplicateLooseMatchChanged(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded)
+        {
+            _libraries.SetDuplicateLooseMatch(DuplicateLooseMatchBox.IsChecked == true);
+        }
+    }
+
+    // 決定ログ DF-3: 切り替えたらすぐ保存する(次に開く取り込み画面から使われる)
+    private void OnUseTextTitleCandidatesChanged(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded)
+        {
+            _libraries.SetUseTextTitleCandidates(UseTextTitleCandidatesBox.IsChecked == true);
         }
     }
 

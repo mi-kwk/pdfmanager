@@ -73,9 +73,14 @@ public static class TagRanks
     public static string Label(int rank) => rank == TagGroup.IndependentRank ? "独立" : $"順位 {rank}";
 }
 
-// GroupId が null のタグは自由タグ。ParentIds は 1 つ上の順位の紐づけ先
-public sealed record TagSummary(long Id, string Name, long UsageCount, long? GroupId, string? GroupName, IReadOnlyList<long> ParentIds, IReadOnlyList<string> ParentNames)
+// GroupId が null のタグは自由タグ。ParentIds は 1 つ上の順位の紐づけ先。Aliases は別名(決定ログ DE-1〜DE-4)
+public sealed record TagSummary(long Id, string Name, long UsageCount, long? GroupId, string? GroupName, IReadOnlyList<long> ParentIds, IReadOnlyList<string> ParentNames,
+    IReadOnlyList<string>? Aliases = null)
 {
+    public IReadOnlyList<string> AliasNames => Aliases ?? [];
+
+    public string AliasText => string.Join("、", AliasNames);
+
     public string GroupLabel => GroupName ?? "自由タグ";
 
     public string ParentText => string.Join("、", ParentNames);
@@ -83,7 +88,8 @@ public sealed record TagSummary(long Id, string Name, long UsageCount, long? Gro
     public bool HasParents => ParentNames.Count > 0;
 
     // 一覧などの 2 行目:「分類２ ・ 漫画、雑誌」
-    public string DetailText => ParentNames.Count == 0 ? GroupLabel : $"{GroupLabel} ・ {string.Join("、", ParentNames)}";
+    public string DetailText => (ParentNames.Count == 0 ? GroupLabel : $"{GroupLabel} ・ {string.Join("、", ParentNames)}")
+        + (AliasNames.Count == 0 ? "" : $" ・ 別名:{AliasText}");
 }
 
 // 利用者の入力が原因の失敗。メッセージはそのまま画面に表示する
