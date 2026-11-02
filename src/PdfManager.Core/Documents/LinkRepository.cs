@@ -36,32 +36,71 @@ public sealed class LinkRepository(SqliteConnection connection)
 
     public bool IsInChain(string documentId) => PreviousOf(documentId) is not null || NextOf(documentId) is not null;
 
-    // 決定ログ V-2: documentId の次に other をつなぐ。documentId にすでに次があれば、その間に入れる
+    // 決定ログ V-2・DK-1: documentId の次に other をつなぐ。other が別の続きに入っていれば、other とその後ろをまとめて移す
+    // (other の前とのつながりは切る)。documentId にすでに次があれば、移したものの最後との間に入れる
     public void InsertNext(string documentId, string other)
     {
         EnsureCanJoin(documentId, other);
+        var segment = Following(other);
         using var transaction = connection.BeginTransaction();
+        Execute("DELETE FROM document_links WHERE type = 'next' AND to_id = $b;", transaction, ("$b", other));
         if (NextOf(documentId) is { } oldNext)
         {
             Execute("DELETE FROM document_links WHERE type = 'next' AND from_id = $a;", transaction, ("$a", documentId));
-            AddNext(other, oldNext, transaction);
+            AddNext(segment[^1], oldNext, transaction);
         }
         AddNext(documentId, other, transaction);
         transaction.Commit();
     }
 
-    // documentId の前に other をつなぐ。documentId にすでに前があれば、その間に入れる
+    // documentId の前に other をつなぐ。other が別の続きに入っていれば、other とその前をまとめて移す
+    // (other の次とのつながりは切る)。documentId にすでに前があれば、移したものの先頭との間に入れる
     public void InsertPrevious(string documentId, string other)
     {
         EnsureCanJoin(documentId, other);
+        var segment = Preceding(other);
         using var transaction = connection.BeginTransaction();
+        Execute("DELETE FROM document_links WHERE type = 'next' AND from_id = $b;", transaction, ("$b", other));
         if (PreviousOf(documentId) is { } oldPrevious)
         {
             Execute("DELETE FROM document_links WHERE type = 'next' AND to_id = $a;", transaction, ("$a", documentId));
-            AddNext(oldPrevious, other, transaction);
+            AddNext(oldPrevious, segment[0], transaction);
         }
         AddNext(other, documentId, transaction);
         transaction.Commit();
+    }
+
+    // 決定ログ DK-1: つなぐと切れてしまう、other の向こう側の相手(次をつなぐなら other の前、前をつなぐなら other の次)。なければ null
+    public string? LinkToCut(string other, bool asNext) => asNext ? PreviousOf(other) : NextOf(other);
+
+    // documentId と同じ続きに入っている文書(自分を含む)。続きがなければ自分だけ
+    public HashSet<string> SameChain(string documentId)
+    {
+        var chain = GetChain(documentId).Select(d => d.Id).ToHashSet();
+        chain.Add(documentId);
+        return chain;
+    }
+
+    // other から後ろ(other を含む、前から順)
+    private List<string> Following(string other)
+    {
+        var list = new List<string> { other };
+        while (NextOf(list[^1]) is { } next && !list.Contains(next))
+        {
+            list.Add(next);
+        }
+        return list;
+    }
+
+    // other から前(other を含む、前から順)
+    private List<string> Preceding(string other)
+    {
+        var list = new List<string> { other };
+        while (PreviousOf(list[0]) is { } previous && !list.Contains(previous))
+        {
+            list.Insert(0, previous);
+        }
+        return list;
     }
 
     // 決定ログ V-6: 続きから外し、前と次をつなぎ直す
@@ -159,16 +198,16 @@ public sealed class LinkRepository(SqliteConnection connection)
         return positions;
     }
 
-    // つなげるのは、まだどの続きにも入っていない文書だけ(決定ログ V-3)
+    // 決定ログ DK-1(V-3 を改めた): 別の続きに入っている文書もつなげる。同じ続きの中の文書はつなげない(並びが輪になるため)
     private void EnsureCanJoin(string documentId, string other)
     {
         if (documentId == other)
         {
             throw new InvalidOperationException("自分自身とはつなげません。");
         }
-        if (IsInChain(other))
+        if (SameChain(documentId).Contains(other))
         {
-            throw new InvalidOperationException("選んだ PDF は、すでに別の続きに入っています。");
+            throw new InvalidOperationException("選んだ PDF は、すでに同じ続きに入っています。");
         }
     }
 

@@ -112,11 +112,22 @@ public sealed partial class TitleBatchViewModel : ObservableObject
     private readonly DataFolder _dataFolder;
     private readonly StorageAccess _storage;
     private List<TitleRow> _rows = [];
+    private readonly HashSet<string> _initialChecked;
+    private readonly HashSet<long> _firstRankTagIds = [];
+    private const long AllDocuments = -1;
+    private const long WithoutFirstRankTag = -2;
+    private const long InitialDocuments = -3;
 
-    public TitleBatchViewModel(DataFolder dataFolder, StorageAccess storage)
+    // チェックが変わったとき(タグの一括付与で、対象を入れ替えるため)
+    public event Action? CheckedChanged;
+
+    // includeAll は「すべての PDF」「第 1 グループのタグがない PDF」も選べるようにする(タグの一括付与、決定ログ DM-2)。
+    // initialChecked は初めからチェックしておく PDF(一覧の右クリックから開いたとき)
+    public TitleBatchViewModel(DataFolder dataFolder, StorageAccess storage, bool includeAll = false, IReadOnlyCollection<string>? initialChecked = null)
     {
         _dataFolder = dataFolder;
         _storage = storage;
+        _initialChecked = initialChecked?.ToHashSet() ?? [];
         using var connection = PdfManagerDatabase.Open(dataFolder.DatabasePath);
         var catalog = new CatalogRepository(connection);
         var groups = catalog.GetGroups().Where(g => g.Rank == 1).ToDictionary(g => g.Id);
@@ -125,6 +136,21 @@ public sealed partial class TitleBatchViewModel : ObservableObject
             .OrderBy(t => groups[t.GroupId!.Value].Name, StringComparer.Ordinal).ThenBy(t => t.Name, NaturalOrder.Instance)
             .Select(t => new TagOption(t.Id, $"{t.Name}({t.GroupLabel}・{t.UsageCount:N0} 件)"))
             .ToList();
+        _firstRankTagIds = TagChoices.Select(t => t.Id).ToHashSet();
+        if (includeAll)
+        {
+            TagChoices =
+            [
+                .. _initialChecked.Count > 0 ? [new TagOption(InitialDocuments, $"一覧で選んでいた PDF({_initialChecked.Count} 件)")] : Array.Empty<TagOption>(),
+                new TagOption(AllDocuments, "すべての PDF"),
+                new TagOption(WithoutFirstRankTag, "第 1 グループのタグがない PDF"),
+                .. TagChoices,
+            ];
+            if (_initialChecked.Count > 0)
+            {
+                SelectedTag = TagChoices[0];
+            }
+        }
     }
 
     public sealed record TagOption(long Id, string Label);
@@ -175,13 +201,21 @@ public sealed partial class TitleBatchViewModel : ObservableObject
         if (SelectedTag is { } tag)
         {
             using var connection = PdfManagerDatabase.Open(_dataFolder.DatabasePath);
-            _rows = DocumentSearchIndex.Load(connection).Search("", [tag.Id])
+            var index = DocumentSearchIndex.Load(connection);
+            var entries = tag.Id switch
+            {
+                AllDocuments => index.Search("", []),
+                WithoutFirstRankTag => index.Search("", []).Where(e => !e.TagIds.Any(_firstRankTagIds.Contains)).ToList(),
+                InitialDocuments => index.Search("", []).Where(e => _initialChecked.Contains(e.Id)).ToList(),
+                _ => index.Search("", [tag.Id]),
+            };
+            _rows = entries
                 .Where(e => e.IsLatest)
                 .Select(e => new TitleRow(e.Id, e.Title, e.FileName, e.StorageId, _storage.Storage.IsAvailable(e.StorageId), _dataFolder))
                 .ToList();
             foreach (var row in _rows)
             {
-                row.IsChecked = row.CanEdit && checkedIds.Contains(row.Id);
+                row.IsChecked = row.CanEdit && (checkedIds.Contains(row.Id) || _initialChecked.Contains(row.Id));
                 row.CheckedChanged += _ => NotifyChecked();
             }
         }
@@ -260,6 +294,7 @@ public sealed partial class TitleBatchViewModel : ObservableObject
 
     private void NotifyChecked()
     {
+        CheckedChanged?.Invoke();
         OnPropertyChanged(nameof(CheckedCount));
         OnPropertyChanged(nameof(CheckedText));
         foreach (var group in Groups)

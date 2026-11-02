@@ -21,6 +21,9 @@
             <ui:TextBlock x:Name="GuideText" TextWrapping="Wrap" Margin="0,0,0,8" />
             <ui:TextBox x:Name="SearchBox" PlaceholderText="タイトル・ファイル名・タグで検索" Icon="{ui:SymbolIcon Search24}"
                         TextChanged="OnSearchChanged" AutomationProperties.Name="文書の検索" />
+            <!-- 決定ログ DK-2: 初めは第 1 グループのタグが同じものだけ(複数あればどれか) -->
+            <CheckBox x:Name="SameTagBox" Margin="0,8,0,0" Checked="OnSearchChanged" Unchecked="OnSearchChanged"
+                      AutomationProperties.Name="第 1 グループのタグが同じものだけ" />
         </StackPanel>
         <ListBox x:Name="CandidateList" Grid.Row="2" Margin="20,0,20,0" MouseDoubleClick="OnDoubleClick"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="選べる文書"

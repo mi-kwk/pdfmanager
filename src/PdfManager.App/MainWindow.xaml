@@ -377,6 +377,13 @@
                        ToolTip="第 1 グループのタグを選んで、1 ページ目が同じ登録済み PDF を探します"
                        AutomationProperties.Name="重複チェック"
                        Margin="0,0,8,0" />
+            <!-- 決定ログ DM-1: 複数の PDF にタグをまとめて付ける・外す画面 -->
+            <ui:Button Content="タグの一括付与"
+                       Icon="{ui:SymbolIcon TagMultiple24}"
+                       Click="OnTagBulkClick"
+                       ToolTip="PDF を選んで、タグをまとめて付けたり外したりします"
+                       AutomationProperties.Name="タグの一括付与"
+                       Margin="0,0,8,0" />
             <!-- 決定ログ DI-1: 複数の PDF のタイトルをまとめて付け直す画面 -->
             <ui:Button Content="タイトルの付け直し"
                        Icon="{ui:SymbolIcon Rename24}"
@@ -664,6 +671,12 @@
                                     <MenuItem Header="版としてまとめる" Click="OnGroupVersionsClick">
                                         <MenuItem.Icon>
                                             <ui:SymbolIcon Symbol="Stack24" />
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                    <!-- 決定ログ DM-1: 選んでいる PDF にタグをまとめて付ける -->
+                                    <MenuItem Header="タグをまとめて付ける" Click="OnTagBulkSelectedClick">
+                                        <MenuItem.Icon>
+                                            <ui:SymbolIcon Symbol="TagMultiple24" />
                                         </MenuItem.Icon>
                                     </MenuItem>
                                     <!-- 決定ログ CC-1: USB への出力 -->
