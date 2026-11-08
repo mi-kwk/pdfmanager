@@ -72,6 +72,21 @@
                                    AutomationProperties.Name="サブをエクスプローラーで開く" />
                         <ui:Button Content="登録の解除" Icon="{ui:SymbolIcon Dismiss24}" Click="OnRemoveSubClick" Margin="0,0,8,8"
                                    ToolTip="中の PDF が 0 件のときだけ解除できます(フォルダは消しません)" />
+                        <!-- 決定ログ EA-7: 退避の画面(設定画面を閉じてから開く) -->
+                        <ui:Button Content="退避" Icon="{ui:SymbolIcon ArchiveArrowBack24}" Click="OnArchiveClick" Margin="0,0,16,8" AutomationProperties.Name="退避"
+                                   ToolTip="長く開いていない PDF を探して、外付け HDD などのサブライブラリへまとめて移します" />
+                        <!-- 決定ログ EA-6: メインのドライブの空きが少なくなったら、起動時に知らせる -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <ui:TextBlock Text="メインのドライブの空きが" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <ComboBox x:Name="ArchiveAlertBox" MinWidth="120" SelectionChanged="OnArchiveAlertChanged" AutomationProperties.Name="空きが少ないときに知らせる割合">
+                                <ComboBoxItem Content="知らせない" Tag="0" />
+                                <ComboBoxItem Content="5% を切ったら" Tag="5" />
+                                <ComboBoxItem Content="10% を切ったら" Tag="10" />
+                                <ComboBoxItem Content="15% を切ったら" Tag="15" />
+                                <ComboBoxItem Content="20% を切ったら" Tag="20" />
+                            </ComboBox>
+                            <ui:TextBlock Text="起動時に知らせる" VerticalAlignment="Center" Margin="6,0,0,0" />
+                        </StackPanel>
                     </WrapPanel>
                     <Grid>
                         <ui:TextBlock x:Name="NoSubsText" Text="サブライブラリはまだありません。「新しいサブを作る」で作れます。" TextWrapping="Wrap"

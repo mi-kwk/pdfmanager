@@ -16,9 +16,11 @@ public partial class AnalyticsWindow : FluentWindow
     private readonly AnalyticsViewModel _viewModel;
     private readonly Action<string> _open;
     private readonly Action<string?, string?> _search;
+    private readonly Action _openArchive;
 
-    public AnalyticsWindow(DataFolder dataFolder, Action<string> open, Action<string?, string?> search)
+    public AnalyticsWindow(DataFolder dataFolder, Action<string> open, Action<string?, string?> search, Action openArchive)
     {
+        _openArchive = openArchive;
         InitializeComponent();
         WindowPlacement.KeepOnScreen(this);
         SystemThemeWatcher.Watch(this);
@@ -82,6 +84,9 @@ public partial class AnalyticsWindow : FluentWindow
             list.SelectedItem = null;
         }
     }
+
+    // 決定ログ EA-7: 長く開いていない PDF を外付け HDD へ移す画面を、メイン画面から開く
+    private void OnArchiveClick(object sender, RoutedEventArgs e) => _openArchive();
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 }

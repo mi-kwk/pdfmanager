@@ -67,7 +67,11 @@ public partial class MainWindow : FluentWindow
         SystemThemeWatcher.Watch(this);
         Closing += OnClosing;
         // 決定ログ BB-5: 前回のバックアップから日数がたっていたら知らせる(画面が出てから)
-        ContentRendered += async (_, _) => await BackupActions.RemindIfDueAsync(this, _libraries, _storage, (int)_viewModel.DocumentCount);
+        ContentRendered += async (_, _) =>
+        {
+            await BackupActions.RemindIfDueAsync(this, _libraries, _storage, (int)_viewModel.DocumentCount);
+            await RemindArchiveIfLowAsync();
+        };
         // ライブラリを切り替えたときや終了したときは、ビューアも閉じる(決定ログ K-6)
         Closed += (_, _) =>
         {
@@ -460,15 +464,55 @@ public partial class MainWindow : FluentWindow
     private async Task MoveSelectedAsync(string? targetId)
     {
         var ids = DocumentList.SelectedItems.Cast<DocumentCard>().Select(c => c.Entry.Id).ToList();
-        if (!await _viewModel.ResolvePendingChangesAsync() || await _viewModel.PrepareMoveAsync(ids, targetId) is not { } plan)
+        if (await _viewModel.ResolvePendingChangesAsync())
+        {
+            await MoveDocumentsAsync(ids, targetId, this);
+        }
+    }
+
+    // 「保存先を移す」と退避の画面(決定ログ EA-1)で共通:確認・空き容量の確認をして、進み具合を出しながら移す。移したら true
+    private async Task<bool> MoveDocumentsAsync(IReadOnlyList<string> ids, string? targetId, Window owner)
+    {
+        if (await _viewModel.PrepareMoveAsync(ids, targetId) is not { } plan)
+        {
+            return false;
+        }
+        _viewer?.CloseDocuments(plan.DocumentIds);
+        var progress = new ProgressWindow($"「{_storage.Storage.StorageName(targetId)}」へ移しています") { Owner = owner };
+        var task = _storage.RunAsync(s => s.Move(plan, progress.Progress, progress.Cancellation));
+        progress.ShowUntil(task);
+        var result = await task;
+        await _viewModel.ReportMoveAsync(result, targetId);
+        return result.Moved > 0;
+    }
+
+    // 決定ログ EA-7: 退避の画面(設定画面・分析画面・起動時のお知らせから開く)
+    public async void OpenArchive()
+    {
+        if (!await _viewModel.ResolvePendingChangesAsync())
         {
             return;
         }
-        _viewer?.CloseDocuments(plan.DocumentIds);
-        var progress = new ProgressWindow($"「{_storage.Storage.StorageName(targetId)}」へ移しています") { Owner = this };
-        var task = _storage.RunAsync(s => s.Move(plan, progress.Progress, progress.Cancellation));
-        progress.ShowUntil(task);
-        await _viewModel.ReportMoveAsync(await task, targetId);
+        await _storage.RefreshAsync();
+        new ArchiveWindow(_viewModel.DataFolder, _storage, MoveDocumentsAsync) { Owner = this }.ShowDialog();
+    }
+
+    // 決定ログ EA-6: メインのドライブの空きが少なくなっていたら、起動時に知らせて退避の画面を開けるようにする
+    private async Task RemindArchiveIfLowAsync()
+    {
+        var percent = _libraries.ArchiveAlertPercent;
+        if (!PdfManager.Core.Library.ArchivePlanner.IsSpaceLow(_viewModel.DataFolder.Root, percent)
+            || PdfManager.Core.Library.ArchivePlanner.DriveSpace(_viewModel.DataFolder.Root) is not var (free, total))
+        {
+            return;
+        }
+        if (await new WpfUiDialogs(this).ConfirmAsync("ドライブの空きが少なくなっています",
+                $"ライブラリのあるドライブの空きが {free * 100.0 / total:0}%({ViewModels.ArchiveViewModel.FormatSize(free)})になりました({percent}% を切っています)。\n\n" +
+                "長く開いていない PDF を、外付け HDD などのサブライブラリへ移すと空きが増えます。退避の画面を開きますか?\n\n(この知らせは、設定画面の「サブライブラリ」で変えたり、止めたりできます)",
+                "退避の画面を開く"))
+        {
+            OpenArchive();
+        }
     }
 
     private async void OnSelectVersionClick(object sender, RoutedEventArgs e)
@@ -564,6 +608,10 @@ public partial class MainWindow : FluentWindow
         {
             _viewModel.SearchFromAnalytics(keywords, tag);
             Activate();
+        }, () =>
+        {
+            Activate();
+            OpenArchive();
         }) { Owner = this };
         _analytics.Closed += (_, _) => _analytics = null;
         _analytics.Show();
@@ -709,6 +757,10 @@ public partial class MainWindow : FluentWindow
             return;
         }
         _viewModel.Refresh();
+        if (settings.ArchiveRequested)
+        {
+            OpenArchive();
+        }
     }
 
     // 下の「サブ n/m 接続」から、設定画面の「ライブラリ」を開く(決定ログ S-1)

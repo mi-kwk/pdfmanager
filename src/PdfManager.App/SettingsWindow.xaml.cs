@@ -59,6 +59,7 @@ public partial class SettingsWindow : FluentWindow
         UseTextTitleCandidatesBox.IsChecked = libraries.UseTextTitleCandidates;
         DuplicateLooseMatchBox.IsChecked = libraries.DuplicateLooseMatch;
         RecordUsageBox.IsChecked = libraries.RecordUsage;
+        ArchiveAlertBox.SelectedItem = ArchiveAlertBox.Items.Cast<System.Windows.Controls.ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == libraries.ArchiveAlertPercent.ToString(System.Globalization.CultureInfo.InvariantCulture)) ?? ArchiveAlertBox.Items[2];
         LoadBackup();
         RefreshRecent();
         Loaded += async (_, _) =>
@@ -153,6 +154,24 @@ public partial class SettingsWindow : FluentWindow
         {
             _libraries.SetShowRegisterAll(ShowRegisterAllBox.IsChecked == true);
         }
+    }
+
+    // 決定ログ EA-6: 切り替えたらすぐ保存する(次の起動から使われる)
+    private void OnArchiveAlertChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (IsLoaded && ArchiveAlertBox.SelectedItem is System.Windows.Controls.ComboBoxItem { Tag: string tag })
+        {
+            _libraries.SetArchiveAlertPercent(int.Parse(tag, System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    // 決定ログ EA-7: 設定画面を閉じてから、メイン画面が退避の画面を開く
+    public bool ArchiveRequested { get; private set; }
+
+    private void OnArchiveClick(object sender, RoutedEventArgs e)
+    {
+        ArchiveRequested = true;
+        Close();
     }
 
     // 決定ログ DA-5: 切り替えたらすぐ保存する(メイン画面に戻ると使われる)

@@ -130,6 +130,15 @@ public sealed class LibraryActions(AppSettingsStore store)
         store.Save(Settings);
     }
 
+    // 決定ログ EA-6: メインのドライブの空きが何 % を切ったら起動時に知らせるか(0 は知らせない)
+    public int ArchiveAlertPercent => Math.Clamp(Settings.ArchiveAlertPercent, 0, 50);
+
+    public void SetArchiveAlertPercent(int value)
+    {
+        Settings = Settings with { ArchiveAlertPercent = Math.Clamp(value, 0, 50) };
+        store.Save(Settings);
+    }
+
     // USB への出力で前回選んだ出力先(次に開いたときの初めの値)
     public string? ExportFolder => Settings.ExportFolder;
 

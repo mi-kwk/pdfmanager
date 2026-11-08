@@ -222,7 +222,13 @@
                         <!-- ⑦ 長く開いていない PDF -->
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
-                                <ui:TextBlock Text="長く開いていない PDF(ダブルクリックで開く)" Style="{StaticResource CardTitle}" />
+                                <DockPanel>
+                                    <!-- 決定ログ EA-7: 外付け HDD への退避の画面へ -->
+                                    <ui:Button DockPanel.Dock="Right" Content="退避" Icon="{ui:SymbolIcon ArchiveArrowBack24}" Click="OnArchiveClick"
+                                               Padding="8,2" AutomationProperties.Name="退避の画面を開く"
+                                               ToolTip="長く開いていない PDF を、外付け HDD などのサブライブラリへまとめて移す画面を開きます" />
+                                    <ui:TextBlock Text="長く開いていない PDF(ダブルクリックで開く)" Style="{StaticResource CardTitle}" />
+                                </DockPanel>
                                 <ListBox ItemsSource="{Binding LongUnopened}" MouseDoubleClick="OnDocumentDoubleClick" MaxHeight="320" AutomationProperties.Name="長く開いていない PDF">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>

@@ -17,11 +17,16 @@ public sealed record ViewPreferences(string Sort = "Registered", long? SortField
 // UseTextTitleCandidates: 取り込み画面のタイトルの候補に、PDF の文字から作ったものも出す(決定ログ DF-3。初めはオン)
 // DuplicateLooseMatch: 1 ページ目の重複チェックで「似ている」ものも出す(決定ログ DH-2。初めは「ほぼ同じ」だけ)
 // RecordUsage: 分析画面のために、検索・閲覧の記録を残す(決定ログ DA-5。初めはオン)
+// ArchiveAlertPercent: メインのドライブの空きがこの % を切ったら起動時に知らせる(決定ログ EA-6。0 は知らせない)
 public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<RecentLibrary> RecentLibraries, ViewPreferences? View = null,
     bool ShowRegisterAll = false, int TagCollapseRank = AppSettings.DefaultTagCollapseRank, BackupPreferences? Backup = null,
-    string? ExportFolder = null, bool UseTextTitleCandidates = true, bool DuplicateLooseMatch = false, bool RecordUsage = true)
+    string? ExportFolder = null, bool UseTextTitleCandidates = true, bool DuplicateLooseMatch = false, bool RecordUsage = true,
+    int ArchiveAlertPercent = AppSettings.DefaultArchiveAlertPercent)
 {
     public const int DefaultTagCollapseRank = 1;
+
+    // 決定ログ EA-6: メインのドライブの空きがこの % を切ったら、起動時に知らせる(0 は知らせない)
+    public const int DefaultArchiveAlertPercent = 10;
 
     // 畳めるのは順位 1〜4(順位 5 の下には欄がない)
     public const int MaxTagCollapseRank = 4;
