@@ -139,6 +139,20 @@ public sealed class LibraryActions(AppSettingsStore store)
         store.Save(Settings);
     }
 
+    // 決定ログ EB-8: この PC で前回「受け渡し」を書き出した日時(ライブラリごと)
+    public DateTimeOffset? LastHandoff(Guid libraryId) =>
+        Settings.LastHandoffs?.TryGetValue(libraryId.ToString("D"), out var at) == true ? at : null;
+
+    public void SetLastHandoff(Guid libraryId, DateTimeOffset at)
+    {
+        var handoffs = new Dictionary<string, DateTimeOffset>(Settings.LastHandoffs ?? new Dictionary<string, DateTimeOffset>())
+        {
+            [libraryId.ToString("D")] = at,
+        };
+        Settings = Settings with { LastHandoffs = handoffs };
+        store.Save(Settings);
+    }
+
     // USB への出力で前回選んだ出力先(次に開いたときの初めの値)
     public string? ExportFolder => Settings.ExportFolder;
 

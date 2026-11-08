@@ -27,11 +27,20 @@ public sealed record SubLibraryRow(SubLibraryState State, string Usage)
     public string Note => State.Status switch
     {
         SubLibraryStatus.Duplicate => "次の場所で見つかりました。「場所を指定し直す」で使う方を選んでください。\n" + string.Join("\n", State.Candidates),
+        SubLibraryStatus.ChangedElsewhere when State.PendingPull is { } plan =>
+            $"ほかの PC で変更されています({plan.Summary})。「読み込む」で読み込むと、この PC でまだ書き込めていない次の変更が消えます:"
+            + string.Join("、", plan.LostTitles.Take(5)) + (plan.LostChanges > 5 ? $" ほか {plan.LostChanges - 5} 件" : ""),
         SubLibraryStatus.ChangedElsewhere or SubLibraryStatus.Unavailable => State.Problem ?? "",
         _ => "",
     };
 
     public bool HasNote => Note.Length > 0;
+
+    // 決定ログ EB-5: このサブを使った PC(つながっているときだけわかる)
+    public string UsersText => State.Users.Count == 0 ? ""
+        : "使っている PC:" + string.Join("、", State.Users.Select(u => $"{u.Pc}({u.LastUsed.ToLocalTime():yyyy/MM/dd})"));
+
+    public bool HasUsers => UsersText.Length > 0;
 }
 
 // SC-08 設定
@@ -366,6 +375,49 @@ public partial class SettingsWindow : FluentWindow
         if (window.CreatedLibrary is { } created)
         {
             SubList.SelectedItem = SubList.Items.Cast<SubLibraryRow>().FirstOrDefault(r => r.Id == created.Id.ToString("D"));
+        }
+    }
+
+    // 決定ログ EB-6
+    private async void OnRegisterSubClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "登録するサブライブラリの .pdflib ファイルを選択",
+            Filter = $"PdfManager ライブラリ (*{LibraryService.Extension})|*{LibraryService.Extension}",
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+        LibraryInfo? registered = null;
+        await RunSubActionAsync(s => registered = s.RegisterExistingSub(dialog.FileName));
+        if (registered is { } info)
+        {
+            SubList.SelectedItem = SubList.Items.Cast<SubLibraryRow>().FirstOrDefault(r => r.Id == info.Id.ToString("D"));
+        }
+    }
+
+    // 決定ログ EB-3
+    private async void OnPullSubClick(object sender, RoutedEventArgs e)
+    {
+        if (await SelectedSubAsync() is not { } row)
+        {
+            return;
+        }
+        if (row.State.PendingPull is not { } plan)
+        {
+            await _dialogs.ShowErrorAsync(row.State.Status == SubLibraryStatus.Connected
+                ? $"サブライブラリ「{row.Name}」は読み込み済みです(ほかの PC での変更は、つないだときに自動で読み込みます)。"
+                : _storage.Storage.UnavailableMessage(row.Id), "読み込む");
+            return;
+        }
+        if (await _dialogs.ConfirmAsync("読み込む",
+                $"サブライブラリ「{row.Name}」の内容を読み込みますか?({plan.Summary})\n\nこの PC でまだサブへ書き込めていない次の変更は消え、サブの内容に合わせます。\n"
+                + string.Join("\n", plan.LostTitles.Take(10).Select(t => "・" + t)) + (plan.LostChanges > 10 ? $"\nほか {plan.LostChanges - 10} 件" : ""),
+                "読み込む"))
+        {
+            await RunSubActionAsync(s => s.PullSub(row.Id));
         }
     }
 

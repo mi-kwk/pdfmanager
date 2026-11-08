@@ -13,6 +13,19 @@ public sealed class StorageAccess(LibraryStorage storage)
     // サブの接続状態・名前・場所が変わったとき(画面のスレッドで呼ぶ)
     public event Action? Changed;
 
+    // 決定ログ EB-2: ほかの PC で変わったサブを読み込んだとき(画面のスレッドで呼ぶ。一覧を読み直して知らせる)
+    public event Action<IReadOnlyList<SubPullReport>>? Pulled;
+
+    // 起動時など、ここを通らずに読み込んだ分を知らせる
+    public void NotifyPulled()
+    {
+        var reports = storage.TakePullReports();
+        if (reports.Count > 0)
+        {
+            Pulled?.Invoke(reports);
+        }
+    }
+
     public async Task<T> RunAsync<T>(Func<LibraryStorage, T> action)
     {
         var before = Signature();
@@ -28,6 +41,7 @@ public sealed class StorageAccess(LibraryStorage storage)
             {
                 Changed?.Invoke();
             }
+            NotifyPulled();
         }
     }
 
@@ -39,5 +53,5 @@ public sealed class StorageAccess(LibraryStorage storage)
 
     public Task RefreshAsync() => RunAsync(s => s.Refresh());
 
-    private string Signature() => string.Join("\n", storage.Subs.Select(s => $"{s.Id}|{s.Name}|{s.Status}|{s.Location?.LibraryFilePath}|{s.Candidates.Count}"));
+    private string Signature() => string.Join("\n", storage.Subs.Select(s => $"{s.Id}|{s.Name}|{s.Status}|{s.PendingPull is not null}|{s.Location?.LibraryFilePath}|{s.Candidates.Count}"));
 }

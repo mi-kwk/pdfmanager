@@ -11,7 +11,8 @@ using PdfManager.Core.Text;
 namespace PdfManager.Core.Export;
 
 // Zip:ZIP にする(決定ログ CC-2)。WriteList:一覧表(CSV)も出す(CC-4)。SplitGroupId:このタググループのタグごとにフォルダを分ける(CC-5)
-public sealed record ExportOptions(bool Zip = false, bool WriteList = true, long? SplitGroupId = null);
+// Handoff:PdfManager で取り込める形で出す(決定ログ EB-7。版はまとまりごと、情報ファイル付き、フォルダ分けはしない)
+public sealed record ExportOptions(bool Zip = false, bool WriteList = true, long? SplitGroupId = null, bool Handoff = false);
 
 public sealed record ExportPlan(int Count, long Bytes, int UnavailableCount, long? FreeBytes)
 {
@@ -29,9 +30,13 @@ public static class ExportService
     public const string ListFileName = "一覧.csv";
     private const string UnsetFolder = "未設定";
 
-    public static ExportPlan Plan(LibraryStorage storage, IReadOnlyCollection<string> documentIds, string destinationFolder)
+    public static ExportPlan Plan(LibraryStorage storage, IReadOnlyCollection<string> documentIds, string destinationFolder, bool handoff = false)
     {
         using var connection = PdfManagerDatabase.Open(storage.Main.DataFolder.DatabasePath);
+        if (handoff)
+        {
+            documentIds = WithSeries(connection, documentIds);
+        }
         var details = new DocumentRepository(connection).GetDetails(documentIds);
         var storages = new SubLibraryRepository(connection).GetStorageIds(documentIds);
         var available = details.Where(d => storage.GetDataFolder(storages.GetValueOrDefault(d.Id)) is not null).ToList();
@@ -48,6 +53,12 @@ public static class ExportService
         IReadOnlyList<FieldDefinition> fields;
         using (var connection = PdfManagerDatabase.Open(storage.Main.DataFolder.DatabasePath))
         {
+            if (options.Handoff)
+            {
+                // 決定ログ EB-7: 版はまとまりごと渡す
+                documentIds = WithSeries(connection, documentIds);
+                options = options with { SplitGroupId = null };
+            }
             details = new DocumentRepository(connection).GetDetails(documentIds);
             storages = new SubLibraryRepository(connection).GetStorageIds(documentIds);
             var catalog = new CatalogRepository(connection);
@@ -60,7 +71,7 @@ public static class ExportService
         details = details.OrderBy(d => order.GetValueOrDefault(d.Id)).ToList();
 
         // 決定ログ CC-6: 新しいフォルダ(または ZIP)を作る。すでにある名前なら「_2」などを付ける
-        var baseName = OutputPrefix + now.ToString("yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture);
+        var baseName = (options.Handoff ? HandoffFormat.OutputPrefix : OutputPrefix) + now.ToString("yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture);
         var outputPath = UniquePath(destinationFolder, baseName, options.Zip ? ".zip" : "");
         var workPath = options.Zip ? outputPath + ".tmp" : outputPath;
         var skipped = new List<string>();
@@ -109,6 +120,27 @@ public static class ExportService
             }
             progress?.Report(new MoveProgress(details.Count, details.Count, ""));
 
+            // 決定ログ EB-7: PdfManager で取り込むための情報ファイル
+            if (options.Handoff)
+            {
+                HandoffManifest manifest;
+                using (var connection = PdfManagerDatabase.Open(storage.Main.DataFolder.DatabasePath))
+                {
+                    manifest = HandoffFormat.Build(connection, storage.Main, storage.PcName, now,
+                        rows.Select(r => (r.Detail.Id, r.RelativePath.Replace('\\', '/'))).ToList());
+                }
+                var json = HandoffFormat.Serialize(manifest);
+                if (zip is not null)
+                {
+                    using var stream = zip.CreateEntry(HandoffFormat.ManifestFileName).Open();
+                    stream.Write(json);
+                }
+                else
+                {
+                    File.WriteAllBytes(Path.Combine(workPath, HandoffFormat.ManifestFileName), json);
+                }
+            }
+
             // 決定ログ CC-4: 一覧表(Excel で開けるよう、UTF-8 の BOM 付き)
             if (options.WriteList)
             {
@@ -134,6 +166,13 @@ public static class ExportService
             File.Move(workPath, outputPath);
         }
         return new ExportResult(outputPath, exported, skipped, Cancelled: false);
+    }
+
+    // 選んだ順を保ったまま、版の系列の文書を加える
+    private static IReadOnlyCollection<string> WithSeries(Microsoft.Data.Sqlite.SqliteConnection connection, IReadOnlyCollection<string> documentIds)
+    {
+        var expanded = new SubLibraryRepository(connection).ExpandToSeries(documentIds);
+        return documentIds.Concat(expanded).Distinct().ToList();
     }
 
     // 分けるグループのタグ(複数あれば名前の順で最初のもの)。なければ「未設定」

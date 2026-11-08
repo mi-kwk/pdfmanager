@@ -17,18 +17,24 @@ public partial class ExportWindow : FluentWindow
 {
     private readonly IReadOnlyList<string> _selectedIds;
     private readonly IReadOnlyList<string> _resultIds;
+    private readonly IReadOnlyList<string> _changedIds;
 
-    // preferSelected:右クリックから開いたときは「選んでいる PDF」、上のボタンからは「今の検索結果すべて」を初めに選ぶ
+    // preferSelected:右クリックから開いたときは「選んでいる PDF」、上のボタンからは「今の検索結果すべて」を初めに選ぶ。
+    // changedIds・lastHandoff:この PC で前回受け渡したあとに登録・変更した PDF と、前回の日時(決定ログ EB-8)
     public ExportWindow(IReadOnlyList<string> selectedIds, IReadOnlyList<string> resultIds, bool preferSelected,
-        IReadOnlyList<TagGroup> groups, string? lastFolder)
+        IReadOnlyList<TagGroup> groups, string? lastFolder, IReadOnlyList<string> changedIds, DateTimeOffset? lastHandoff)
     {
         InitializeComponent();
         WindowPlacement.KeepOnScreen(this);
         SystemThemeWatcher.Watch(this);
         _selectedIds = selectedIds;
         _resultIds = resultIds;
+        _changedIds = changedIds;
         SelectedChoice.Content = $"選んでいる PDF({selectedIds.Count:N0} 件)";
         ResultsChoice.Content = $"今の検索結果すべて({resultIds.Count:N0} 件)";
+        ChangedChoice.Content = lastHandoff is { } last
+            ? $"この PC で前回受け渡した {last.ToLocalTime():yyyy/MM/dd HH:mm} のあとに登録・変更した PDF({changedIds.Count:N0} 件)"
+            : $"この PC で前回受け渡したあとに登録・変更した PDF(まだ受け渡していないため、すべて {changedIds.Count:N0} 件)";
         SelectedChoice.IsEnabled = selectedIds.Count > 0;
         (preferSelected && selectedIds.Count > 0 ? SelectedChoice : ResultsChoice).IsChecked = true;
         SplitBox.ItemsSource = new[] { new ExportSplitChoice("分けない", null) }
@@ -65,15 +71,30 @@ public partial class ExportWindow : FluentWindow
             await new WpfUiDialogs(this).ShowErrorAsync("出力先のフォルダを選んでください(USB メモリをつないでいるかも確かめてください)。", "USB へ出力");
             return;
         }
-        DocumentIds = SelectedChoice.IsChecked == true ? _selectedIds : _resultIds;
+        var handoff = HandoffCheck.IsChecked == true;
+        DocumentIds = handoff && ChangedChoice.IsChecked == true ? _changedIds : SelectedChoice.IsChecked == true ? _selectedIds : _resultIds;
         if (DocumentIds.Count == 0)
         {
             await new WpfUiDialogs(this).ShowErrorAsync("出す PDF がありません。", "USB へ出力");
             return;
         }
         Folder = folder;
-        Options = new ExportOptions(ZipFormat.IsChecked == true, ListCheck.IsChecked == true, (SplitBox.SelectedItem as ExportSplitChoice)?.GroupId);
+        Options = new ExportOptions(ZipFormat.IsChecked == true, ListCheck.IsChecked == true,
+            handoff ? null : (SplitBox.SelectedItem as ExportSplitChoice)?.GroupId, Handoff: handoff);
         DialogResult = true;
+    }
+
+    // 決定ログ EB-7・EB-8: 受け渡しのときはフォルダ分けをせず、「前回の受け渡しのあと」を選べる
+    private void OnHandoffChanged(object sender, RoutedEventArgs e)
+    {
+        var handoff = HandoffCheck.IsChecked == true;
+        SplitBox.IsEnabled = !handoff;
+        ChangedChoice.IsEnabled = handoff;
+        if (!handoff && ChangedChoice.IsChecked == true)
+        {
+            (SelectedChoice.IsEnabled ? SelectedChoice : ResultsChoice).IsChecked = true;
+        }
+        Title = handoff ? "受け渡し(USB へ出力)" : "USB へ出力";
     }
 
     private void OnCancelClick(object sender, RoutedEventArgs e) => DialogResult = false;

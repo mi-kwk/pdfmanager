@@ -28,10 +28,10 @@
 
         <!-- 画面に収まらないときはスクロールする(大きいときは、サブライブラリと最近使ったライブラリの欄が広がる) -->
         <ScrollViewer Grid.Row="1" x:Name="ContentScroll" Margin="16,0,16,16" VerticalScrollBarVisibility="Auto">
-        <Grid MinHeight="940" Height="{Binding ViewportHeight, ElementName=ContentScroll}">
+        <Grid MinHeight="1100" Height="{Binding ViewportHeight, ElementName=ContentScroll}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="3*" MinHeight="200" />
+                <RowDefinition Height="3*" MinHeight="370" />
                 <RowDefinition Height="2*" MinHeight="140" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
@@ -65,6 +65,12 @@
                                   Text="見る回数の少ない PDF や過去の PDF を、別のドライブや外付け HDD に置く場所です。一覧の右クリック「保存先を移す」で移します。つながっていないサブの PDF も一覧・検索には出ますが、表示のみになります。" />
                     <WrapPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
                         <ui:Button Content="新しいサブを作る" Appearance="Primary" Icon="{ui:SymbolIcon FolderAdd24}" Click="OnCreateSubClick" Margin="0,0,8,8" />
+                        <!-- 決定ログ EB-6: ほかの PC で作ったサブ(同じライブラリのもの)を登録する -->
+                        <ui:Button Content="既存のサブを登録する" Icon="{ui:SymbolIcon FolderLink24}" Click="OnRegisterSubClick" Margin="0,0,8,8"
+                                   ToolTip="ほかの PC で作ったサブライブラリ(同じライブラリのコピーで作ったもの)の .pdflib ファイルを選んで、この PC でも使えるようにします" />
+                        <!-- 決定ログ EB-3: この PC の変更が消えるため確認を待っているサブを読み込む -->
+                        <ui:Button Content="読み込む" Icon="{ui:SymbolIcon ArrowDownload24}" Click="OnPullSubClick" Margin="0,0,8,8" AutomationProperties.Name="サブを読み込む"
+                                   ToolTip="ほかの PC で変更されたサブライブラリの内容を、この PC に読み込みます" />
                         <ui:Button Content="名前の変更" Icon="{ui:SymbolIcon Edit24}" Click="OnRenameSubClick" Margin="0,0,8,8" />
                         <ui:Button Content="場所を指定し直す" Icon="{ui:SymbolIcon Search24}" Click="OnRelocateSubClick" Margin="0,0,8,8"
                                    ToolTip="サブライブラリのフォルダを移した・2 か所で見つかったときに、使う .pdflib ファイルを選びます" />
@@ -114,6 +120,8 @@
                                             <ui:TextBlock Text="{Binding Folder}" FontSize="12" TextTrimming="CharacterEllipsis"
                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                             <ui:TextBlock Text="{Binding Usage}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            <ui:TextBlock Text="{Binding UsersText}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                          Visibility="{Binding HasUsers, Converter={StaticResource BoolToVisibility}}" />
                                             <ui:TextBlock Text="{Binding Note}" FontSize="12" TextWrapping="Wrap"
                                                           Foreground="{DynamicResource SystemFillColorCautionBrush}"
                                                           Visibility="{Binding HasNote, Converter={StaticResource BoolToVisibility}}" />

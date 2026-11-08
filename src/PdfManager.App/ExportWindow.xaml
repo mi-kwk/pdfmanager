@@ -17,6 +17,8 @@
             <ui:TextBlock Text="出す PDF" FontTypography="BodyStrong" Margin="0,0,0,4" />
             <RadioButton x:Name="SelectedChoice" GroupName="Target" AutomationProperties.Name="選んでいる PDF" />
             <RadioButton x:Name="ResultsChoice" GroupName="Target" AutomationProperties.Name="今の検索結果すべて" />
+            <!-- 決定ログ EB-8: 受け渡しのときだけ選べる -->
+            <RadioButton x:Name="ChangedChoice" GroupName="Target" IsEnabled="False" AutomationProperties.Name="前回の受け渡しのあとに登録・変更した PDF" />
 
             <ui:TextBlock Text="出力先(USB メモリなどのフォルダ)" FontTypography="BodyStrong" Margin="0,14,0,4" />
             <DockPanel>
@@ -28,6 +30,11 @@
 
             <!-- 決定ログ CC-2・CC-4・CC-5 -->
             <ui:TextBlock Text="出し方" FontTypography="BodyStrong" Margin="0,14,0,4" />
+            <!-- 決定ログ EB-7: ほかの PC の PdfManager で取り込める形 -->
+            <CheckBox x:Name="HandoffCheck" Content="PdfManager で取り込める形で出す(受け渡し)" Margin="0,0,0,2" Checked="OnHandoffChanged" Unchecked="OnHandoffChanged"
+                      AutomationProperties.Name="PdfManager で取り込める形で出す" />
+            <ui:TextBlock x:Name="HandoffNote" TextWrapping="Wrap" FontSize="12" Margin="28,0,0,8" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                          Text="タイトル・タグ・補助項目・評価・メモ・登録日も一緒に出し、ほかの PC で「取り込み」の「受け渡しを取り込む」で取り込めます。版はまとまりごと出します。" />
             <StackPanel Orientation="Horizontal">
                 <RadioButton x:Name="FolderFormat" GroupName="Format" Content="フォルダ" IsChecked="True" Margin="0,0,16,0" AutomationProperties.Name="フォルダで出す" />
                 <RadioButton x:Name="ZipFormat" GroupName="Format" Content="ZIP(1 つのファイルにまとめる)" AutomationProperties.Name="ZIP で出す" />

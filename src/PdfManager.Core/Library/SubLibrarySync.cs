@@ -6,6 +6,9 @@ namespace PdfManager.Core.Library;
 // サブが、メインが最後に書き込んだあとにほかの PC などで変更されていた(決定ログ S-12、S-14)
 public sealed class SubLibraryChangedElsewhereException(string message) : Exception(message);
 
+// サブを使った PC と、最後に使った日時(決定ログ EB-5)
+public sealed record SubLibraryUse(string Pc, DateTimeOffset LastUsed);
+
 // メインの内容をサブへ書き込む(決定ログ S-11、S-12)。
 // この PC ではメインのデータベースを使って表示・検索し、サブにはその写しを書き込んで、サブだけで完結するようにする。
 // 項目・タグの定義はメインと同じ ID のまま写す
@@ -24,6 +27,51 @@ public static class SubLibrarySync
         using var connection = PdfManagerDatabase.Open(sub.DataFolder.DatabasePath);
         using var command = connection.CreateCommand();
         command.CommandText = $"SELECT value FROM library_meta WHERE key = '{TokenKey}';";
+        return command.ExecuteScalar() as string;
+    }
+
+    // ==== 使っている PC の記録(決定ログ EB-5、S-14)。library_meta の pc_usage に「PC の名前 タブ 最後に使った日時」を 1 行ずつ ====
+
+    private const string UsageKey = "pc_usage";
+
+    public static IReadOnlyList<SubLibraryUse> ReadUsage(LibraryInfo sub)
+    {
+        using var connection = PdfManagerDatabase.Open(sub.DataFolder.DatabasePath);
+        return ParseUsage(ReadMeta(connection, UsageKey));
+    }
+
+    // 同じ日に何度もつないだときは書き込まない
+    public static IReadOnlyList<SubLibraryUse> RecordUse(LibraryInfo sub, string pc, DateTimeOffset now)
+    {
+        using var connection = PdfManagerDatabase.Open(sub.DataFolder.DatabasePath);
+        var usage = ParseUsage(ReadMeta(connection, UsageKey)).ToList();
+        var mine = usage.FirstOrDefault(u => string.Equals(u.Pc, pc, StringComparison.OrdinalIgnoreCase));
+        if (mine is not null && mine.LastUsed.ToLocalTime().Date == now.ToLocalTime().Date)
+        {
+            return usage;
+        }
+        usage.RemoveAll(u => string.Equals(u.Pc, pc, StringComparison.OrdinalIgnoreCase));
+        usage.Insert(0, new SubLibraryUse(pc, now));
+        using var command = connection.CreateCommand();
+        command.CommandText = $"INSERT INTO library_meta (key, value) VALUES ('{UsageKey}', $value) ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+        command.Parameters.AddWithValue("$value", string.Join('\n', usage.Select(u => $"{u.Pc.Replace('\t', ' ').Replace('\n', ' ')}\t{u.LastUsed.UtcDateTime:O}")));
+        command.ExecuteNonQuery();
+        return usage;
+    }
+
+    private static IReadOnlyList<SubLibraryUse> ParseUsage(string? value) => (value ?? "")
+        .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        .Select(line => line.Split('\t'))
+        .Where(parts => parts.Length == 2 && DateTimeOffset.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _))
+        .Select(parts => new SubLibraryUse(parts[0], DateTimeOffset.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind)))
+        .OrderByDescending(u => u.LastUsed)
+        .ToList();
+
+    private static string? ReadMeta(SqliteConnection connection, string key)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT value FROM library_meta WHERE key = $key;";
+        command.Parameters.AddWithValue("$key", key);
         return command.ExecuteScalar() as string;
     }
 

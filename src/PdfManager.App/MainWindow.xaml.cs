@@ -57,6 +57,9 @@ public partial class MainWindow : FluentWindow
             _deviceChangeTimer.Stop();
             await _storage.RefreshAsync();
         };
+        // 決定ログ EB-2・EB-3: ほかの PC で変わったサブを読み込んだら一覧を読み直して知らせ、確認が要るものは聞く
+        _storage.Pulled += reports => _ = OnSubsPulledAsync(reports);
+        _storage.Changed += () => _ = AskPendingPullsAsync();
         _viewModel.Editor.TagSettingRequested += OnTagSettingRequested;
         _viewModel.ResultsReplacing += () => _restoringSelection = true;
         _viewModel.SelectionRestoreRequested += RestoreSelection;
@@ -69,6 +72,8 @@ public partial class MainWindow : FluentWindow
         // 決定ログ BB-5: 前回のバックアップから日数がたっていたら知らせる(画面が出てから)
         ContentRendered += async (_, _) =>
         {
+            _storage.NotifyPulled();
+            await AskPendingPullsAsync();
             await BackupActions.RemindIfDueAsync(this, _libraries, _storage, (int)_viewModel.DocumentCount);
             await RemindArchiveIfLowAsync();
         };
@@ -498,6 +503,71 @@ public partial class MainWindow : FluentWindow
     }
 
     // 決定ログ EA-6: メインのドライブの空きが少なくなっていたら、起動時に知らせて退避の画面を開けるようにする
+    // ==== ほかの PC で変わったサブ(決定ログ EB-2・EB-3) ====
+
+    private readonly HashSet<string> _askedPulls = [];
+    private bool _askingPulls;
+
+    // 開いている画面(設定画面など)の上に出す
+    private IUserDialogs ActiveDialogs() =>
+        new WpfUiDialogs(Application.Current.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive && w.IsVisible) ?? this);
+
+    private async Task OnSubsPulledAsync(IReadOnlyList<SubPullReport> reports)
+    {
+        _viewModel.Refresh();
+        var lines = reports.Select(r =>
+        {
+            var removed = r.Plan.RemovedTitles.Count == 0 ? ""
+                : "\n  一覧から外した PDF(ほかの PC で移した・削除したもの):" + string.Join("、", r.Plan.RemovedTitles.Take(10))
+                  + (r.Plan.RemovedTitles.Count > 10 ? $" ほか {r.Plan.RemovedTitles.Count - 10} 件" : "");
+            return $"・「{r.SubName}」:{r.Plan.Summary}{removed}";
+        });
+        await ActiveDialogs().ShowErrorAsync("ほかの PC で変更されたサブライブラリの内容を読み込みました。\n\n" + string.Join("\n", lines), "サブライブラリを読み込みました");
+    }
+
+    // この PC の書き込めていない変更が消えるときは、読み込む前に確かめる(「あとで」にしたものは、このあと聞かない)
+    private async Task AskPendingPullsAsync()
+    {
+        if (_askingPulls)
+        {
+            return;
+        }
+        _askingPulls = true;
+        try
+        {
+            foreach (var sub in _storage.Storage.Subs.Where(s => s.PendingPull is not null && _askedPulls.Add(s.Id)).ToList())
+            {
+                var plan = sub.PendingPull!;
+                var lost = string.Join("\n", plan.LostTitles.Take(10).Select(t => "・" + t)) + (plan.LostChanges > 10 ? $"\nほか {plan.LostChanges - 10} 件" : "");
+                if (!await ActiveDialogs().ConfirmAsync("ほかの PC で変更されたサブライブラリ",
+                        $"サブライブラリ「{sub.Name}」は、ほかの PC で変更されています({plan.Summary})。\n\n" +
+                        $"読み込むと、この PC でまだサブへ書き込めていない次の変更が消え、サブの内容に合わせます。\n{lost}\n\n" +
+                        "読み込みますか?\n(あとで設定画面の「ライブラリ」の「読み込む」でも読み込めます。それまで、このサブの PDF はこの PC では表示のみです)",
+                        "読み込む"))
+                {
+                    continue;
+                }
+                await PullSubAsync(sub.Id);
+            }
+        }
+        finally
+        {
+            _askingPulls = false;
+        }
+    }
+
+    public async Task PullSubAsync(string subId)
+    {
+        try
+        {
+            await _storage.RunAsync(s => s.PullSub(subId));
+        }
+        catch (Exception ex) when (ex is LibraryException or IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            await ActiveDialogs().ShowErrorAsync($"読み込めませんでした。\n\n{ex.Message}", "サブライブラリ");
+        }
+    }
+
     private async Task RemindArchiveIfLowAsync()
     {
         var percent = _libraries.ArchiveAlertPercent;
@@ -562,6 +632,90 @@ public partial class MainWindow : FluentWindow
         new ImportWindow(_viewModel.DataFolder, paths, showRegisterAll: _libraries.ShowRegisterAll, tagCollapseRank: _libraries.TagCollapseRank,
             useTextTitleCandidates: _libraries.UseTextTitleCandidates, duplicateLoose: _libraries.DuplicateLooseMatch) { Owner = this }.ShowDialog();
         _viewModel.Refresh();
+    }
+
+    // ==== 受け渡しを取り込む(F-52、決定ログ EB-9〜EB-11) ====
+
+    private void OnImportMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { ContextMenu: { } menu } button)
+        {
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+    }
+
+    private void OnHandoffFolderClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = $"受け渡しのフォルダ(「{Core.Export.HandoffFormat.OutputPrefix}…」)を選択" };
+        if (dialog.ShowDialog(this) == true)
+        {
+            OpenHandoffImport(dialog.FolderName);
+        }
+    }
+
+    private void OnHandoffZipClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog { Title = "受け渡しの ZIP を選択", Filter = "ZIP ファイル (*.zip)|*.zip" };
+        if (dialog.ShowDialog(this) == true)
+        {
+            OpenHandoffImport(dialog.FileName);
+        }
+    }
+
+    public async void OpenHandoffImport(string path)
+    {
+        if (!await _viewModel.ResolvePendingChangesAsync())
+        {
+            return;
+        }
+        var dialogs = new WpfUiDialogs(this);
+        Core.Export.HandoffPackage package;
+        Core.Export.HandoffImportPlan plan;
+        try
+        {
+            package = await Task.Run(() => Core.Export.HandoffPackage.Open(path));
+        }
+        catch (Exception ex) when (ex is LibraryException or IOException or UnauthorizedAccessException)
+        {
+            await dialogs.ShowErrorAsync(ex.Message, "受け渡しを取り込む");
+            return;
+        }
+        using (package)
+        {
+            plan = await _storage.RunAsync(s => Core.Export.HandoffImporter.Plan(s, package));
+            if (plan.NewDocuments.Count == 0 && plan.Different.Count == 0)
+            {
+                await dialogs.ShowErrorAsync($"取り込むものはありません(受け渡しの {package.Manifest.Documents.Count:N0} 件は、すべてこの PC に同じ情報であります)。", "受け渡しを取り込む");
+                return;
+            }
+            var window = new HandoffImportWindow(package, plan) { Owner = this };
+            if (window.ShowDialog() != true)
+            {
+                return;
+            }
+            var choices = window.Choices;
+            var progress = new ProgressWindow("受け渡しを取り込んでいます") { Owner = this };
+            var task = _storage.RunAsync(s => Core.Export.HandoffImporter.ImportAsync(s, package, plan, choices, DateTimeOffset.Now, progress.Progress, progress.Cancellation)
+                .GetAwaiter().GetResult());
+            progress.ShowUntil(task);
+            Core.Export.HandoffImportResult result;
+            try
+            {
+                result = await task;
+            }
+            catch (Exception ex) when (ex is LibraryException or IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+            {
+                _viewModel.Refresh();
+                await dialogs.ShowErrorAsync($"取り込めませんでした。それまでに取り込んだ分は残っています。\n\n{ex.Message}", "受け渡しを取り込む");
+                return;
+            }
+            _viewModel.Refresh();
+            var message = (result.Cancelled ? "途中で止めました。" : "") + $"新しく {result.Added:N0} 件を登録し、{result.Updated:N0} 件の情報を直しました。"
+                + (result.Problems.Count > 0 ? $"\n\n次のものは取り込めませんでした。\n" + string.Join("\n", result.Problems.Take(8)) + (result.Problems.Count > 8 ? $"\nほか {result.Problems.Count - 8} 件" : "") : "");
+            await dialogs.ShowErrorAsync(message, "受け渡しを取り込みました");
+        }
     }
 
     // 決定ログ DD-6: 保留の PDF だけを取り込み画面で開く(ファイルは選ばない)
@@ -678,11 +832,14 @@ public partial class MainWindow : FluentWindow
         var selectedSet = DocumentList.SelectedItems.Cast<DocumentCard>().Select(c => c.Entry.Id).ToHashSet();
         var selected = results.Where(selectedSet.Contains).ToList();
         IReadOnlyList<Core.Catalog.TagGroup> groups;
+        IReadOnlyList<string> changed;
+        var lastHandoff = _libraries.LastHandoff(_library.Id);
         using (var connection = Core.Database.PdfManagerDatabase.Open(_viewModel.DataFolder.DatabasePath))
         {
             groups = new Core.Catalog.CatalogRepository(connection).GetGroups();
+            changed = Core.Export.HandoffFormat.ChangedSince(connection, lastHandoff);
         }
-        var window = new ExportWindow(selected, results, preferSelected, groups, _libraries.ExportFolder) { Owner = this };
+        var window = new ExportWindow(selected, results, preferSelected, groups, _libraries.ExportFolder, changed, lastHandoff) { Owner = this };
         if (window.ShowDialog() != true)
         {
             return;
@@ -690,7 +847,8 @@ public partial class MainWindow : FluentWindow
         _libraries.SetExportFolder(window.Folder);
         var dialogs = new WpfUiDialogs(this);
         var (ids, folder, options) = (window.DocumentIds, window.Folder, window.Options);
-        var plan = await _storage.RunAsync(s => Core.Export.ExportService.Plan(s, ids, folder));
+        var startedAt = DateTimeOffset.Now;
+        var plan = await _storage.RunAsync(s => Core.Export.ExportService.Plan(s, ids, folder, options.Handoff));
         if (plan.Count == 0)
         {
             await dialogs.ShowErrorAsync("出せる PDF がありません(保存先のサブライブラリがつながっていません)。", "USB へ出力");
@@ -720,8 +878,13 @@ public partial class MainWindow : FluentWindow
             await dialogs.ShowErrorAsync("途中で止めました。作りかけのものは消しました。", "USB へ出力");
             return;
         }
+        // 決定ログ EB-8: 次の「前回の受け渡しのあと」は、書き出し始めた時から
+        if (options.Handoff)
+        {
+            _libraries.SetLastHandoff(_library.Id, startedAt);
+        }
         // 決定ログ CC-8: 出せなかったものは理由と一緒に知らせる
-        var message = $"{result.Exported:N0} 件を出力しました。\n{result.OutputPath}"
+        var message = $"{result.Exported:N0} 件を出力しました。" + (options.Handoff ? "ほかの PC で「取り込み」の「受け渡しを取り込む」で取り込めます。" : "") + $"\n{result.OutputPath}"
             + (result.Skipped.Count > 0 ? $"\n\n次の {result.Skipped.Count:N0} 件は出せませんでした。\n" + string.Join("\n", result.Skipped.Take(5)) + (result.Skipped.Count > 5 ? $"\nほか {result.Skipped.Count - 5:N0} 件" : "") : "");
         if (await dialogs.ConfirmAsync("USB へ出力しました", message, "エクスプローラーで開く"))
         {
@@ -814,6 +977,12 @@ public partial class MainWindow : FluentWindow
         if (e.Data.GetData(DataFormats.FileDrop) is string[] paths)
         {
             e.Handled = true;
+            // 決定ログ EB-9: 受け渡しのフォルダ・ZIP なら、受け渡しの取り込みにする
+            if (paths.FirstOrDefault(Core.Export.HandoffPackage.IsPackage) is { } handoff)
+            {
+                Dispatcher.BeginInvoke(() => OpenHandoffImport(handoff));
+                return;
+            }
             // ドロップ元(エクスプローラー)を待たせないよう、ドロップ処理が終わってから画面を開く
             Dispatcher.BeginInvoke(() => OpenImportWindow(paths));
         }

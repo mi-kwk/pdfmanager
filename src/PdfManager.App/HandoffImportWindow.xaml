@@ -1,0 +1,95 @@
+<ui:FluentWindow x:Class="PdfManager.App.HandoffImportWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="受け渡しを取り込む"
+                 Width="900" Height="760" MinWidth="720" MinHeight="520"
+                 WindowStartupLocation="CenterOwner"
+                 ShowInTaskbar="False"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <ui:FluentWindow.Resources>
+        <Style x:Key="Hint" TargetType="ui:TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+    </ui:FluentWindow.Resources>
+
+    <!-- 決定ログ EB-9〜EB-11:取り込む前に、新しい PDF・中身が同じ PDF・新しく作るタグを確かめる -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="受け渡しを取り込む" ShowMinimize="False" />
+
+        <StackPanel Grid.Row="1" Margin="16,0,16,8">
+            <ui:TextBlock x:Name="SourceText" FontTypography="BodyStrong" TextWrapping="Wrap" />
+            <ui:TextBlock x:Name="SourcePath" Style="{StaticResource Hint}" Margin="0,2,0,0" />
+            <ui:TextBlock x:Name="OtherLibraryNote" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                          Text="別のライブラリから書き出したものです。タグ・グループ・補助項目は名前で合わせて取り込みます。" />
+            <ui:TextBlock x:Name="SummaryText" TextWrapping="Wrap" Margin="0,8,0,0" />
+            <ui:TextBlock x:Name="DefinitionsText" Style="{StaticResource Hint}" Margin="0,4,0,0" />
+        </StackPanel>
+
+        <TabControl Grid.Row="2" Margin="16,0,16,0">
+            <TabItem x:Name="NewTab" Header="新しく登録する PDF">
+                <DockPanel Margin="0,8,0,0">
+                    <ui:TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Margin="0,0,0,6"
+                                  Text="メインに登録します。サムネイルは取り込むときに作り直します。開いた回数などの記録は持ち込みません。" />
+                    <ListBox x:Name="NewList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="新しく登録する PDF">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,2">
+                                    <ui:TextBlock DockPanel.Dock="Right" Text="{Binding SizeText}" Width="80" TextAlignment="Right" />
+                                    <StackPanel>
+                                        <ui:TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                        <ui:TextBlock Text="{Binding Detail}" Style="{StaticResource Hint}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </TabItem>
+            <!-- 決定ログ EB-10 -->
+            <TabItem x:Name="DifferentTab" Header="中身が同じで情報が違う PDF">
+                <DockPanel Margin="0,8,0,0">
+                    <ui:TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Margin="0,0,0,6"
+                                  Text="この PC にすでにある PDF です。行ごとに、受け渡しの情報をどう使うかを選べます(初めは「タグは足す・ほかは今のまま」)。" />
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                        <ui:TextBlock Text="すべてを" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ui:Button Content="タグは足す・ほかは今のまま" Click="OnAllAddTagsClick" Margin="0,0,8,0" />
+                        <ui:Button Content="相手に合わせる" Click="OnAllOverwriteClick" Margin="0,0,8,0" />
+                        <ui:Button Content="そのまま" Click="OnAllKeepClick" />
+                    </StackPanel>
+                    <ListBox x:Name="DifferentList" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="情報が違う PDF">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,4">
+                                    <ComboBox DockPanel.Dock="Right" Width="230" Margin="12,0,0,0" VerticalAlignment="Center"
+                                              ItemsSource="{Binding Choices}" SelectedIndex="{Binding ChoiceIndex}" IsEnabled="{Binding Writable}"
+                                              AutomationProperties.Name="{Binding Title}" />
+                                    <StackPanel>
+                                        <ui:TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                        <ui:TextBlock Text="{Binding Detail}" Style="{StaticResource Hint}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,12,16,16">
+            <ui:Button Content="キャンセル" IsCancel="True" Click="OnCancelClick" Margin="0,0,8,0" />
+            <ui:Button x:Name="ImportButton" Content="取り込む" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Click="OnImportClick"
+                       AutomationProperties.Name="受け渡しを取り込む" />
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

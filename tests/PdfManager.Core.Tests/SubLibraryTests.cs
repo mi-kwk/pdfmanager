@@ -306,23 +306,24 @@ public sealed class SubLibraryTests : IDisposable
     }
 
     [Fact]
-    public void ChangedElsewhere_IsReadOnlyAndNotOverwritten()
+    public void ChangedElsewhere_IsReadAndUsableAgain()
     {
         AddDocument("a1", "文書");
         var sub = CreateSub();
         var subId = sub.Id.ToString("D");
         Move(["a1"], subId);
-        // ほかの PC で書き込まれたつもり
+        // ほかの PC で書き込まれたつもり(決定ログ EB-2。以前は表示のみにしていた)
         SubLibrarySync.WriteNewToken(sub);
 
         _storage.Refresh();
         var change = _storage.BeginChange(["a1"]);
         var problems = _storage.CompleteChange(change);
 
-        Assert.Equal(SubLibraryStatus.ChangedElsewhere, _storage.FindSub(subId)!.Status);
-        Assert.False(_storage.IsAvailable(subId));
+        Assert.Equal(SubLibraryStatus.Connected, _storage.FindSub(subId)!.Status);
+        Assert.True(_storage.IsAvailable(subId));
         Assert.Empty(problems);
-        Assert.Equal(1L, Scalar<long>(_main, "SELECT needs_push FROM sub_libraries;"));
+        Assert.Empty(_storage.TakePullReports());
+        Assert.Equal(0L, Scalar<long>(_main, "SELECT needs_push FROM sub_libraries;"));
     }
 
     [Fact]

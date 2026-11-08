@@ -38,7 +38,16 @@ public sealed record SubLibraryState(SubLibraryRecord Record, SubLibraryStatus S
 
     // 場所の表示用。見つかっていなければ最後に見つかった場所
     public string Folder => Path.GetDirectoryName(Location?.LibraryFilePath ?? Record.LibraryFilePath) ?? "";
+
+    // 決定ログ EB-3: ほかの PC で変わっていて、読み込むとこの PC の変更が消えるため、確認を待っている
+    public SubPullPlan? PendingPull { get; init; }
+
+    // 決定ログ EB-5: このサブを使った PC(つながっているときだけわかる)
+    public IReadOnlyList<SubLibraryUse> Users { get; init; } = [];
 }
+
+// 決定ログ EB-2: ほかの PC で変わったサブを読み込んだ結果(画面で知らせる)
+public sealed record SubPullReport(string SubName, SubPullPlan Plan);
 
 // サブの変更の前に作り、変更のあとで CompleteChange に渡す
 public sealed record SubChange(IReadOnlyList<string> DocumentIds, IReadOnlyDictionary<string, bool> PreviousNeedsPush);
@@ -64,9 +73,28 @@ public sealed record MoveResult(int Moved, IReadOnlyList<string> Problems, bool 
 
 // メインライブラリと、登録したサブライブラリの場所・状態をまとめて扱う(決定ログ S-1〜S-15)。
 // 保存先は null がメイン、文字列がサブの ID
-public sealed class LibraryStorage(LibraryInfo main, Func<IEnumerable<string>>? driveRoots = null)
+public sealed class LibraryStorage(LibraryInfo main, Func<IEnumerable<string>>? driveRoots = null, string? pcName = null)
 {
     private readonly Func<IEnumerable<string>> _driveRoots = driveRoots ?? DefaultDriveRoots;
+    private readonly List<SubPullReport> _pullReports = [];
+
+    // 決定ログ EB-5: 記録に使うこの PC の名前
+    public string PcName { get; } = pcName ?? Environment.MachineName;
+
+    // 前に呼んだときから、ほかの PC で変わったサブを読み込んだ結果(取り出すと空になる)
+    public IReadOnlyList<SubPullReport> TakePullReports()
+    {
+        lock (_pullReports)
+        {
+            var reports = _pullReports.ToList();
+            _pullReports.Clear();
+            return reports;
+        }
+    }
+
+    // 決定ログ EB-5・S-14: このサブを、この PC のほかに使っている PC
+    public IReadOnlyList<SubLibraryUse> OtherUsers(string? subId) =>
+        FindSub(subId)?.Users.Where(u => !string.Equals(u.Pc, PcName, StringComparison.OrdinalIgnoreCase)).ToList() ?? [];
 
     public LibraryInfo Main { get; } = main;
 
@@ -127,14 +155,26 @@ public sealed class LibraryStorage(LibraryInfo main, Func<IEnumerable<string>>? 
             LibraryService.PrepareSubDatabase(sub);
             if (SubLibrarySync.ReadToken(sub) != record.SyncedToken)
             {
-                return new SubLibraryState(record, SubLibraryStatus.ChangedElsewhere, sub, [], null);
+                // 決定ログ EB-2・EB-3: ほかの PC で変わっていたら読み込む。この PC の変更が消えるときは確認を待つ
+                var plan = SubLibraryPull.Plan(connection, record, sub);
+                if (plan.LostChanges > 0)
+                {
+                    return new SubLibraryState(record, SubLibraryStatus.ChangedElsewhere, sub, [], PendingPullMessage(record.Name, plan))
+                    {
+                        PendingPull = plan,
+                        Users = SubLibrarySync.ReadUsage(sub),
+                    };
+                }
+                PullInto(connection, repository, record, sub);
+                record = repository.Find(record.Id)!;
             }
             if (sub.Name != record.Name)
             {
                 LibraryService.RenameLibraryFile(sub, record.Name);
                 sub = sub with { Name = record.Name };
             }
-            var state = new SubLibraryState(record, SubLibraryStatus.Connected, sub, [], null);
+            var users = RecordUse(sub);
+            var state = new SubLibraryState(record, SubLibraryStatus.Connected, sub, [], null) { Users = users };
             if (record.NeedsPush)
             {
                 // つないでいない間に項目・タグの定義を変えたときなど(決定ログ S-12)
@@ -152,6 +192,93 @@ public sealed class LibraryStorage(LibraryInfo main, Func<IEnumerable<string>>? 
         {
             return new SubLibraryState(record, SubLibraryStatus.Unavailable, sub, [], $"サブライブラリ「{record.Name}」を使えません。{ex.Message}");
         }
+    }
+
+    // ==== ほかの PC で変わったサブの読み込み(決定ログ EB-2〜EB-4) ====
+
+    public static string PendingPullMessage(string name, SubPullPlan plan) =>
+        $"サブライブラリ「{name}」は、ほかの PC で変更されています。読み込むと、この PC でまだサブへ書き込めていない {plan.LostChanges:N0} 件の変更が消えるため、" +
+        "確認を待っています。設定画面の「ライブラリ」の「読み込む」で読み込めます。それまでこの PC では表示のみです。";
+
+    // サブの内容を読み込み、合言葉を覚え直してから、メインの内容(定義と、この PC で残した文書)をサブへ書き戻す
+    private SubPullPlan PullInto(SqliteConnection connection, SubLibraryRepository repository, SubLibraryRecord record, LibraryInfo sub)
+    {
+        var token = SubLibrarySync.ReadToken(sub) ?? SubLibrarySync.WriteNewToken(sub);
+        var (plan, definitionsAdded) = SubLibraryPull.Apply(connection, record, sub, Main.DataFolder);
+        repository.SetSynced(record.Id, token, needsPush: false);
+        SubLibrarySync.Push(connection, repository.Find(record.Id)!, sub, null);
+        if (definitionsAdded)
+        {
+            // 増えたタグなどを、ほかのサブにも書き込む(つないだときに書き直す)
+            foreach (var other in repository.GetAll().Where(r => r.Id != record.Id))
+            {
+                repository.MarkNeedsPush(other.Id);
+            }
+        }
+        if (plan.HasChanges)
+        {
+            lock (_pullReports)
+            {
+                _pullReports.Add(new SubPullReport(record.Name, plan));
+            }
+        }
+        return plan;
+    }
+
+    // 決定ログ EB-5: 記録できなくても(書き込めないドライブなど)、サブは使える
+    private IReadOnlyList<SubLibraryUse> RecordUse(LibraryInfo sub)
+    {
+        try
+        {
+            return SubLibrarySync.RecordUse(sub, PcName, DateTimeOffset.UtcNow);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
+        {
+            return [];
+        }
+    }
+
+    // 決定ログ EB-3: 確認のあとで読み込む(この PC の書き込めていない変更は消える)
+    public SubPullPlan PullSub(string id)
+    {
+        if (FindSub(id) is not { Location: { } location })
+        {
+            throw new LibraryException("サブライブラリがつながっていません。");
+        }
+        SubPullPlan plan;
+        using (var connection = OpenMain())
+        {
+            var repository = new SubLibraryRepository(connection);
+            plan = PullInto(connection, repository, repository.Find(id) ?? throw new LibraryException("サブライブラリが登録されていません。"), location);
+        }
+        Refresh();
+        return plan;
+    }
+
+    // 決定ログ EB-6: 同じメイン(マスターのコピー)のサブを登録する。登録したら、サブの内容を読み込む
+    public LibraryInfo RegisterExistingSub(string libraryFilePath)
+    {
+        var (info, _) = LibraryService.ReadFile(libraryFilePath);
+        if (info.Kind != LibraryKind.Sub)
+        {
+            throw new LibraryException("選んだファイルはサブライブラリではありません。サブライブラリの .pdflib ファイルを選んでください。");
+        }
+        if (info.MainId != Main.Id)
+        {
+            throw new LibraryException("選んだサブライブラリは、別に作ったライブラリのサブです。同じライブラリ(マスターのコピー)のサブだけ登録できます。");
+        }
+        using (var connection = OpenMain())
+        {
+            var repository = new SubLibraryRepository(connection);
+            if (repository.Find(info.Id.ToString("D")) is { } existing)
+            {
+                throw new LibraryException($"このサブライブラリは「{existing.Name}」としてすでに登録されています。場所が変わったときは「場所を指定し直す」を使ってください。");
+            }
+            // 合言葉は空にしておき、つないだときに読み込む
+            repository.Add(info, Main, "", DateTimeOffset.UtcNow);
+        }
+        Refresh();
+        return info;
     }
 
     // 登録した場所、メインからの相対の場所、ほかのドライブの同じ場所を探す

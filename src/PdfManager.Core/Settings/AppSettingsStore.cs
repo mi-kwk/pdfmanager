@@ -18,10 +18,11 @@ public sealed record ViewPreferences(string Sort = "Registered", long? SortField
 // DuplicateLooseMatch: 1 ページ目の重複チェックで「似ている」ものも出す(決定ログ DH-2。初めは「ほぼ同じ」だけ)
 // RecordUsage: 分析画面のために、検索・閲覧の記録を残す(決定ログ DA-5。初めはオン)
 // ArchiveAlertPercent: メインのドライブの空きがこの % を切ったら起動時に知らせる(決定ログ EA-6。0 は知らせない)
+// LastHandoffs: ライブラリ ID ごとの、この PC で前回「受け渡し」を書き出した日時(決定ログ EB-8)
 public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<RecentLibrary> RecentLibraries, ViewPreferences? View = null,
     bool ShowRegisterAll = false, int TagCollapseRank = AppSettings.DefaultTagCollapseRank, BackupPreferences? Backup = null,
     string? ExportFolder = null, bool UseTextTitleCandidates = true, bool DuplicateLooseMatch = false, bool RecordUsage = true,
-    int ArchiveAlertPercent = AppSettings.DefaultArchiveAlertPercent)
+    int ArchiveAlertPercent = AppSettings.DefaultArchiveAlertPercent, IReadOnlyDictionary<string, DateTimeOffset>? LastHandoffs = null)
 {
     public const int DefaultTagCollapseRank = 1;
 

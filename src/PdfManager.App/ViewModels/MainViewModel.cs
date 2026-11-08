@@ -919,11 +919,24 @@ public partial class MainViewModel : ObservableObject
             return null;
         }
         var series = plan.Count > plan.SelectedCount ? $"\n版の系列ごと移すため、選んだ {plan.SelectedCount} 件より多くなります。" : "";
+        var shared = SharedSubNote(StorageIdsOf(plan.DocumentIds).Values, "移す");
         return await _dialogs.ConfirmAsync("保存先を移す",
-                $"{plan.Count} 件の PDF(合計 {FormatSize(plan.Bytes)})を「{targetName}」へ移しますか?{series}\n\nコピーして中身が同じことを確かめてから、元の場所の PDF を消します。",
+                $"{plan.Count} 件の PDF(合計 {FormatSize(plan.Bytes)})を「{targetName}」へ移しますか?{series}\n\nコピーして中身が同じことを確かめてから、元の場所の PDF を消します。{shared}",
                 "移す")
             ? plan
             : null;
+    }
+
+    // 決定ログ EB-5・S-14: ほかの PC でも使っているサブから移す・削除するときは、確認の画面で知らせる
+    private string SharedSubNote(IEnumerable<string?> storageIds, string action)
+    {
+        var notes = storageIds.OfType<string>().Distinct()
+            .Select(id => (Name: Storage.StorageName(id), Others: Storage.OtherUsers(id)))
+            .Where(x => x.Others.Count > 0)
+            .Select(x => $"・「{x.Name}」:{string.Join("、", x.Others.Select(u => $"{u.Pc}({u.LastUsed.ToLocalTime():yyyy/MM/dd})"))}")
+            .ToList();
+        return notes.Count == 0 ? ""
+            : $"\n\n次のサブライブラリは、ほかの PC でも使っています。{action}と、その PC では次にサブをつないだときに一覧から外れます。\n{string.Join("\n", notes)}";
     }
 
     public async Task ReportMoveAsync(MoveResult result, string? targetId)
@@ -1398,7 +1411,7 @@ public partial class MainViewModel : ObservableObject
             ? "PDF 本体はファイル名を付けて Windows のごみ箱に移します(ごみ箱から元に戻せます)。"
             : "ライブラリが USB メモリなどにあるため、ごみ箱は使えません。PDF 本体も完全に削除され、元に戻せません。";
         if (!await _dialogs.ConfirmAsync("削除の確認",
-                $"{subject}を削除しますか?\n\n{detail}\nタイトル・タグ・項目・メモなどの情報は元に戻せません。", "削除する"))
+                $"{subject}を削除しますか?\n\n{detail}\nタイトル・タグ・項目・メモなどの情報は元に戻せません。{SharedSubNote(storages.Values, "削除する")}", "削除する"))
         {
             return false;
         }

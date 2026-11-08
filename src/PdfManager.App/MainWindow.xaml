@@ -347,7 +347,19 @@
                        Icon="{ui:SymbolIcon DocumentAdd24}"
                        Click="OnImportClick"
                        ToolTip="PDF を選んで取り込みます(ファイルやフォルダを画面にドラッグ&amp;ドロップしても取り込めます)"
-                       Margin="0,0,8,0" />
+                       Margin="0,0,2,0" />
+            <!-- 決定ログ EB-9: 取り込みのメニュー(受け渡しを取り込む) -->
+            <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon ChevronDown20}" Padding="6,5" Margin="0,0,8,0" Click="OnImportMenuClick"
+                       AutomationProperties.Name="取り込みのメニュー" ToolTip="ほかの PC から受け渡された PDF を取り込みます">
+                <ui:Button.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="PDF を選んで取り込む" Click="OnImportClick" />
+                        <Separator />
+                        <MenuItem Header="受け渡しを取り込む(フォルダを選ぶ)" Click="OnHandoffFolderClick" />
+                        <MenuItem Header="受け渡しを取り込む(ZIP を選ぶ)" Click="OnHandoffZipClick" />
+                    </ContextMenu>
+                </ui:Button.ContextMenu>
+            </ui:Button>
             <!-- 決定ログ DD-6・DD-7: 保留・削除予定にある PDF(あるときだけ表示) -->
             <ui:Button Content="{Binding HeldButtonText}"
                        Icon="{ui:SymbolIcon Clock24}"
