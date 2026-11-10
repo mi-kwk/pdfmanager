@@ -5,6 +5,9 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>PdfManager</AssemblyName>
     <RootNamespace>PdfManager.App</RootNamespace>
+    <!-- アプリのバージョン(2026-11-10 の利用者の要望)。exe を作った日時から自動で付ける:年.月.日.時分(例 2026.11.10.1829) -->
+    <Version>$([System.DateTime]::Now.ToString("yyyy.M.d.HHmm"))</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

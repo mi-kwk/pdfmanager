@@ -118,7 +118,17 @@ public sealed class ImportService(DataFolder dataFolder)
         {
             if (new DocumentRepository(connection).FindIdByHash(fileHash) is not null)
             {
-                return new PreparedImport(sourcePath, PreparationStatus.Duplicate, "同じ内容の PDF が登録済みです", fileHash, fileSize, 0, [], [], null);
+                // 本当に同じものか見て確かめられるよう、1 ページ目のプレビューは作る(2026-11-10 の利用者の要望)
+                string? duplicatePreview = Path.Combine(previewFolder, Guid.NewGuid().ToString("N") + ".jpg");
+                try
+                {
+                    await PdfPageRenderer.RenderFirstPageToJpegAsync(sourcePath, duplicatePreview, PreviewWidth);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    duplicatePreview = null;
+                }
+                return new PreparedImport(sourcePath, PreparationStatus.Duplicate, "同じ内容の PDF が登録済みです", fileHash, fileSize, 0, [], [], duplicatePreview);
             }
         }
 

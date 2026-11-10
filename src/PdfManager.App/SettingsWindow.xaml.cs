@@ -46,6 +46,11 @@ public sealed record SubLibraryRow(SubLibraryState State, string Usage)
 // SC-08 設定
 public partial class SettingsWindow : FluentWindow
 {
+    // exe を作った日時から付けたバージョン(年.月.日.時分。PdfManager.App.csproj の Version)
+    public static string AppVersion =>
+        System.Reflection.Assembly.GetEntryAssembly()?.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "不明";
+
     private readonly LibraryInfo _current;
     private readonly LibraryActions _libraries;
     private readonly StorageAccess _storage;
@@ -61,6 +66,7 @@ public partial class SettingsWindow : FluentWindow
         _dialogs = new WpfUiDialogs(this);
         SystemThemeWatcher.Watch(this);
 
+        AppVersionText.Text = $"PdfManager バージョン {AppVersion}";
         CurrentName.Text = current.Name;
         CurrentFolder.Text = current.RootFolder;
         ShowRegisterAllBox.IsChecked = libraries.ShowRegisterAll;

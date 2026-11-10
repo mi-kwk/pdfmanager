@@ -38,6 +38,8 @@
 
             <Border Grid.Row="0" Style="{StaticResource PaneBorder}" Margin="0,0,0,12">
                 <StackPanel>
+                    <!-- アプリのバージョン(exe を作った日時、2026-11-10 の利用者の要望) -->
+                    <ui:TextBlock x:Name="AppVersionText" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,10" />
                     <ui:TextBlock Text="現在のライブラリ(メイン)" FontTypography="BodyStrong" Margin="0,0,0,8" />
                     <ui:TextBlock x:Name="CurrentName" FontTypography="Subtitle" />
                     <ui:TextBlock x:Name="CurrentFolder" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />

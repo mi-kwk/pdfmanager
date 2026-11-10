@@ -69,6 +69,8 @@ public partial class MainWindow : FluentWindow
         InputBindings.Add(new KeyBinding(new RelayCommand(() => SearchBox.Focus()), Key.F, ModifierKeys.Control));
         SystemThemeWatcher.Watch(this);
         Closing += OnClosing;
+        // ほかの画面(設定・つなぐ相手の選択など)を閉じてメイン画面に戻ったときも、一覧を描き直す
+        Activated += (_, _) => QueueListRedraw();
         // 決定ログ BB-5: 前回のバックアップから日数がたっていたら知らせる(画面が出てから)
         ContentRendered += async (_, _) =>
         {
@@ -160,6 +162,64 @@ public partial class MainWindow : FluentWindow
         {
             _restoringSelection = false;
         }
+        // 一覧を入れ替えたあと(ほかの画面から戻ったときなど)に、表示が描き直されないことがある(2026-11-10 の利用者の報告)
+        QueueListRedraw();
+    }
+
+    // ==== 一覧の描き直し ====
+
+    private bool _listRedrawQueued;
+
+    // 一覧の並べ方を計算し直し、今のスクロール位置で描き直す。続けて呼ばれても 1 回にまとめる
+    private void QueueListRedraw()
+    {
+        if (_listRedrawQueued)
+        {
+            return;
+        }
+        _listRedrawQueued = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            _listRedrawQueued = false;
+            var scroll = FindDescendant<ScrollViewer>(DocumentList);
+            var offset = scroll?.VerticalOffset ?? 0;
+            if (FindDescendant<VirtualizingPanel>(DocumentList) is { } panel)
+            {
+                panel.InvalidateMeasure();
+            }
+            DocumentList.InvalidateMeasure();
+            DocumentList.UpdateLayout();
+            if (scroll is not null)
+            {
+                // 利用者の環境では、スクロールすると表示が戻った。1 ピクセルだけ動かしてすぐ戻し、同じことを起こす(見た目には変わらない)
+                var max = Math.Max(0, scroll.ExtentHeight - scroll.ViewportHeight);
+                var target = Math.Min(offset, max);
+                if (max >= 1)
+                {
+                    scroll.ScrollToVerticalOffset(target >= 1 ? target - 1 : target + 1);
+                    scroll.UpdateLayout();
+                }
+                scroll.ScrollToVerticalOffset(target);
+            }
+            DocumentList.InvalidateVisual();
+        }, DispatcherPriority.ContextIdle);
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is T found)
+            {
+                return found;
+            }
+            if (FindDescendant<T>(child) is { } deeper)
+            {
+                return deeper;
+            }
+        }
+        return null;
     }
 
     // ==== タグ設定(決定ログ R-11 ④) ====

@@ -152,7 +152,15 @@
                                     <Border DockPanel.Dock="Left" Width="40" Height="52" Margin="0,0,10,0" CornerRadius="3"
                                             BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Background="White"
                                             Opacity="{Binding IsExcluded, Converter={StaticResource ExcludedOpacity}}">
-                                        <Image Source="{Binding Preview}" Stretch="Uniform" />
+                                        <Grid>
+                                            <Image Source="{Binding Preview}" Stretch="Uniform" />
+                                            <!-- 重複しているものは、サムネイルを灰色にかぶせて「重複」と出す(中身は見えるように半透明) -->
+                                            <Border Background="#99808080" CornerRadius="2"
+                                                    Visibility="{Binding IsDuplicate, Converter={StaticResource BoolToVisibility}}">
+                                                <TextBlock Text="重複" Foreground="White" FontSize="10" FontWeight="SemiBold"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,2" />
+                                            </Border>
+                                        </Grid>
                                     </Border>
                                     <StackPanel VerticalAlignment="Center" Opacity="{Binding IsExcluded, Converter={StaticResource ExcludedOpacity}}">
                                         <ui:TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />

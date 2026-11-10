@@ -41,8 +41,11 @@ public partial class ImportItem(string sourcePath) : EditableDocument
     public override IReadOnlyList<string> TitleCandidates => Prepared?.TitleCandidates ?? [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText), nameof(IsReady), nameof(IsRegistrable))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(IsReady), nameof(IsRegistrable), nameof(IsDuplicate))]
     public partial ImportItemStatus Status { get; set; } = ImportItemStatus.Preparing;
+
+    // 登録済み・一覧の中と同じ内容(サムネイルを灰色にして「重複」と出す、2026-11-10 の利用者の要望)
+    public bool IsDuplicate => Status == ImportItemStatus.Duplicate;
 
     // 決定ログ R-4(案B): 一覧に残したまま、取り込まない印を付ける
     [ObservableProperty]
