@@ -202,7 +202,8 @@ public partial class MainWindow : FluentWindow
                 scroll.ScrollToVerticalOffset(target);
             }
             DocumentList.InvalidateVisual();
-        }, DispatcherPriority.ContextIdle);
+            // 2026-11-10:手が空いたとき(ContextIdle)では一瞬消えて見えたため、描く直前に行う
+        }, DispatcherPriority.Render);
     }
 
     private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
@@ -826,6 +827,10 @@ public partial class MainWindow : FluentWindow
         {
             Activate();
             OpenArchive();
+        }, rating =>
+        {
+            _viewModel.SearchByRating(rating);
+            Activate();
         }) { Owner = this };
         _analytics.Closed += (_, _) => _analytics = null;
         _analytics.Show();

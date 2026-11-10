@@ -156,6 +156,32 @@
                                 </ListBox>
                             </StackPanel>
                         </Border>
+                        <!-- 決定ログ FA-1〜FA-4: 評価ごとの件数(押すとメイン画面をその評価だけに絞る) -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <ui:TextBlock Text="評価ごとの件数(今の評価・最新版だけ。押すとその評価で検索)" Style="{StaticResource CardTitle}" />
+                                <ListBox ItemsSource="{Binding Ratings}" SelectionChanged="OnRatingSelected" AutomationProperties.Name="評価ごとの件数">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="90" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <ui:TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center"
+                                                              Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                    <Rectangle Width="{Binding Width}" Height="10" Fill="{DynamicResource AccentFillColorDefaultBrush}" VerticalAlignment="Center" />
+                                                    <ui:TextBlock Text="{Binding Count, StringFormat={} {0:N0} 件}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                                    <ui:TextBlock Text="{Binding PercentText, StringFormat=({0})}" Margin="4,0,0,0" FontSize="12" VerticalAlignment="Center"
+                                                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Border>
                         <!-- ⑥ タグごとの件数と開いた回数 -->
                         <Border Style="{StaticResource Card}">
                             <StackPanel>

@@ -32,6 +32,9 @@ public sealed record SavedSearchCondition
 
     public int? MinRating { get; init; }
 
+    // 決定ログ FA-4:「★N だけ」
+    public int? MaxRating { get; init; }
+
     public bool UnratedOnly { get; init; }
 
     public string RegisteredFrom { get; init; } = "";

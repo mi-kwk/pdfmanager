@@ -131,6 +131,24 @@ public static class UsageAnalytics
         ORDER BY 4 DESC, 3 DESC, t.normalized_name;
         """, period, r => new TagStat(r.GetInt64(0), r.GetString(1), r.GetInt32(2), r.GetInt32(3)), ("$group", (object?)groupId ?? DBNull.Value));
 
+    // 決定ログ FA-1〜FA-3: 評価ごとの件数(添字 0 が未評価、1〜5 が ★1〜★5)。一覧に出る最新版だけ。期間に関係なく今の評価
+    public static IReadOnlyList<int> RatingCounts(SqliteConnection connection)
+    {
+        var counts = new int[6];
+        foreach (var (rating, count) in Rows(connection, """
+                     SELECT d.rating, COUNT(*) FROM documents d
+                     WHERE d.series_id IS NULL OR d.version_no = (SELECT MAX(version_no) FROM documents s WHERE s.series_id = d.series_id)
+                     GROUP BY d.rating;
+                     """, new AnalyticsPeriod(null, null, null), r => (r.GetInt32(0), r.GetInt32(1))))
+        {
+            if (rating is >= 0 and <= 5)
+            {
+                counts[rating] = count;
+            }
+        }
+        return counts;
+    }
+
     // ⑦ 長く開いていない PDF(一度も開いていないものを先に、その中は登録日の古い順。最新版だけ。期間に関係なく今の値)
     public static IReadOnlyList<RankedDocument> LongUnopened(SqliteConnection connection, int limit = 50) => Rows(connection, $"""
         SELECT d.id, d.title, d.file_name, d.view_count, d.last_viewed_at

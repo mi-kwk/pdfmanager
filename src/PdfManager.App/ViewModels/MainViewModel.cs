@@ -98,6 +98,11 @@ public partial class MainViewModel : ObservableObject
         new("★3 以上", 3, false),
         new("★2 以上", 2, false),
         new("★1 以上", 1, false),
+        // 決定ログ FA-4: 分析画面の評価ごとの件数から絞り込むときにも使う
+        new("★4 だけ", 4, false, 4),
+        new("★3 だけ", 3, false, 3),
+        new("★2 だけ", 2, false, 2),
+        new("★1 だけ", 1, false, 1),
         new("未評価のみ", null, true),
     ];
 
@@ -298,7 +303,57 @@ public partial class MainViewModel : ObservableObject
 
     public bool HasNoResults => HasDocuments && Results.Count == 0;
 
-    public string ResultText => IsFiltering ? $"{Results.Count:N0} 件(全 {DocumentCount:N0} 件)" : $"{Results.Count:N0} 件";
+    // 決定ログ FB-4: 絞っているときは「絞り込み中」と出す
+    public string ResultText => IsFiltering ? $"{Results.Count:N0} 件(絞り込み中・全 {DocumentCount:N0} 件)" : $"{Results.Count:N0} 件";
+
+    // ==== 設定中の検索条件(決定ログ FB-1〜FB-3) ====
+
+    private bool IsPinnedTag(TagFilterItem tag) => tag.Tag.GroupId is { } group && ItemSections.Any(s => s.Group.Id == group);
+
+    // 「タグを検索」の欄:項目にないタグの含む・除外と、未設定
+    public bool OtherTagsIsSet => UntaggedOnly || TagFilters.Any(t => t.State != TagFilterState.None && !IsPinnedTag(t));
+
+    public bool FieldsIsSet => FieldFilters.Any(f => f.HasCondition);
+
+    public bool RatingIsSet => SelectedRatingFilter != RatingChoices[0];
+
+    public bool RegisteredIsSet => RegisteredFrom.Trim().Length > 0 || RegisteredTo.Trim().Length > 0;
+
+    public bool LastViewedIsSet => LastViewedFrom.Trim().Length > 0 || LastViewedTo.Trim().Length > 0 || NeverViewedOnly;
+
+    public bool StorageIsSet => SelectedStorageFilter is { IsAll: false };
+
+    // 決定ログ FB-2: 一番上の帯に出す、設定中の条件の名前
+    public string ActiveConditionsText
+    {
+        get
+        {
+            var names = new List<string>();
+            if (SearchText.Trim().Length > 0) names.Add("キーワード");
+            if (IncludeOldVersions) names.Add("旧版も表示");
+            names.AddRange(ItemSections.Where(s => s.IsSet).Select(s => s.Group.Name));
+            if (OtherTagsIsSet) names.Add(UntaggedOnly ? "未設定(タグなし)" : "タグ");
+            if (FieldsIsSet) names.Add("補助項目");
+            if (RatingIsSet) names.Add("評価");
+            if (RegisteredIsSet) names.Add("登録日");
+            if (LastViewedIsSet) names.Add("最終閲覧日");
+            if (StorageIsSet) names.Add("保存先");
+            return "検索条件が設定されています:" + string.Join("・", names);
+        }
+    }
+
+    private void NotifyActiveConditions()
+    {
+        foreach (var section in ItemSections)
+        {
+            section.NotifyIsSet();
+        }
+        foreach (var name in new[] { nameof(OtherTagsIsSet), nameof(FieldsIsSet), nameof(RatingIsSet), nameof(RegisteredIsSet),
+                     nameof(LastViewedIsSet), nameof(StorageIsSet), nameof(ActiveConditionsText) })
+        {
+            OnPropertyChanged(name);
+        }
+    }
 
     public string DocumentSummaryText => DocumentCount == 0
         ? "PDF はまだ登録されていません"
@@ -399,6 +454,7 @@ public partial class MainViewModel : ObservableObject
             .Select(f => new SavedFieldCondition(f.Field.Id, f.Text, f.From, f.To, f.Options.Where(o => o.IsChecked).Select(o => o.Value).ToList()))
             .ToList(),
         MinRating = SelectedRatingFilter.MinRating,
+        MaxRating = SelectedRatingFilter.MaxRating,
         UnratedOnly = SelectedRatingFilter.UnratedOnly,
         RegisteredFrom = RegisteredFrom,
         RegisteredTo = RegisteredTo,
@@ -478,7 +534,7 @@ public partial class MainViewModel : ObservableObject
                     }
                 }
             }
-            SelectedRatingFilter = RatingChoices.FirstOrDefault(r => r.MinRating == condition.MinRating && r.UnratedOnly == condition.UnratedOnly) ?? RatingChoices[0];
+            SelectedRatingFilter = RatingChoices.FirstOrDefault(r => r.MinRating == condition.MinRating && r.MaxRating == condition.MaxRating && r.UnratedOnly == condition.UnratedOnly) ?? RatingChoices[0];
             RegisteredFrom = condition.RegisteredFrom;
             RegisteredTo = condition.RegisteredTo;
             LastViewedFrom = condition.LastViewedFrom;
@@ -821,6 +877,18 @@ public partial class MainViewModel : ObservableObject
         SearchText = keywords ?? "";
         UpdateOtherTags();
         ApplySearch();
+    }
+
+    // 決定ログ FA-4: 分析画面の評価ごとの件数から、その評価だけ(0 は未評価)で絞る。ほかの条件は外す
+    public void SearchByRating(int rating)
+    {
+        ClearConditions();
+        SelectedRatingFilter = rating switch
+        {
+            0 => RatingChoices.First(r => r.UnratedOnly),
+            5 => RatingChoices.First(r => r.MinRating == 5 && !r.UnratedOnly),
+            _ => RatingChoices.FirstOrDefault(r => r.MinRating == rating && r.MaxRating == rating) ?? RatingChoices[0],
+        };
     }
 
     // 決定ログ DL-1〜DL-3: 星を押したら、選んでいる全件の評価だけをすぐ保存する。ほかの欄の保存していない変更はそのまま残す
@@ -1206,6 +1274,7 @@ public partial class MainViewModel : ObservableObject
             UntaggedOnly = UntaggedOnly,
             FieldConditions = FieldFilters.Select(f => f.ToCondition()).OfType<FieldCondition>().ToList(),
             MinRating = SelectedRatingFilter.MinRating,
+            MaxRating = SelectedRatingFilter.MaxRating,
             UnratedOnly = SelectedRatingFilter.UnratedOnly,
             RegisteredFrom = ParseDate(RegisteredFrom, out var registeredFromError),
             RegisteredTo = ParseDate(RegisteredTo, out var registeredToError),
@@ -1250,6 +1319,7 @@ public partial class MainViewModel : ObservableObject
 
         OnPropertyChanged(nameof(IsFiltering));
         OnPropertyChanged(nameof(ResultText));
+        NotifyActiveConditions();
         QueueSearchRecord();
         SelectionRestoreRequested?.Invoke(SelectedIds.ToList());
     }

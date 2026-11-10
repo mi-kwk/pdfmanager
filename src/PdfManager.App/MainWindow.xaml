@@ -20,6 +20,14 @@
                  PreviewDrop="OnDrop">
 
     <ui:FluentWindow.Resources>
+        <!-- 決定ログ FB-1: 条件が入っている欄の見出しに出す札 -->
+        <Style x:Key="SetBadge" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="6,1" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
         <conv:ThumbnailConverter x:Key="Thumbnail" DecodeWidth="240" />
@@ -439,6 +447,16 @@
                                        Command="{Binding ClearConditionsCommand}" />
                             <ui:TextBlock Text="絞り込み" FontTypography="BodyStrong" VerticalAlignment="Center" />
                         </DockPanel>
+                        <!-- 決定ログ FB-2: 検索条件が入っているときの帯(どの条件かも出す) -->
+                        <Border Background="{DynamicResource AccentFillColorDefaultBrush}" CornerRadius="6" Padding="10,6" Margin="0,0,0,10"
+                                Visibility="{Binding IsFiltering, Converter={StaticResource BoolToVisibility}}">
+                            <DockPanel>
+                                <ui:Button DockPanel.Dock="Right" Content="条件をクリア" Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Center"
+                                           Command="{Binding ClearConditionsCommand}" AutomationProperties.Name="帯の条件をクリア" />
+                                <TextBlock Text="{Binding ActiveConditionsText}" Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center"
+                                           AutomationProperties.AutomationId="ActiveConditions" />
+                            </DockPanel>
+                        </Border>
 
                         <!-- 保存した検索(F-16、決定ログ X-3)。初めは閉じておく -->
                         <Expander Header="保存した検索" Margin="0,0,0,8">
@@ -494,7 +512,8 @@
                         <ItemsControl ItemsSource="{Binding ItemSections}" AutomationProperties.Name="項目">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Expander Header="{Binding Group.Name}" IsExpanded="True" Margin="0,0,0,8">
+                                    <Expander IsExpanded="True" Margin="0,0,0,8">
+<Expander.Header><StackPanel Orientation="Horizontal"><TextBlock Text="{Binding Group.Name}" VerticalAlignment="Center" /><Border Style="{StaticResource SetBadge}" Visibility="{Binding IsSet, Converter={StaticResource BoolToVisibility}}"><TextBlock Text="設定中" Foreground="White" FontSize="11" /></Border></StackPanel></Expander.Header>
                                         <StackPanel>
                                             <ui:TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="検索" Icon="{ui:SymbolIcon Search24}"
                                                         Margin="0,0,0,6" AutomationProperties.Name="{Binding SearchName}" />
@@ -509,7 +528,8 @@
                         </ItemsControl>
 
                         <!-- 項目にないタグ・タググループの検索(決定ログ Q-7)と未設定(Q-5) -->
-                        <Expander Header="タグを検索" IsExpanded="True" Margin="0,0,0,8">
+                        <Expander IsExpanded="True" Margin="0,0,0,8">
+<Expander.Header><StackPanel Orientation="Horizontal"><TextBlock Text="タグを検索" VerticalAlignment="Center" /><Border Style="{StaticResource SetBadge}" Visibility="{Binding OtherTagsIsSet, Converter={StaticResource BoolToVisibility}}"><TextBlock Text="設定中" Foreground="White" FontSize="11" /></Border></StackPanel></Expander.Header>
                             <StackPanel>
                                 <ui:TextBox Text="{Binding OtherTagSearch, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="タグ名・グループ名"
                                             Icon="{ui:SymbolIcon Search24}" Margin="0,0,0,6" AutomationProperties.Name="タグを検索" />
@@ -525,7 +545,8 @@
                         </Expander>
 
                         <!-- 補助項目(決定ログ Q-6)。初めは閉じておく。入っている値から選ぶか、文字・範囲で指定する -->
-                        <Expander Header="補助項目" Margin="0,0,0,8">
+                        <Expander Margin="0,0,0,8">
+<Expander.Header><StackPanel Orientation="Horizontal"><TextBlock Text="補助項目" VerticalAlignment="Center" /><Border Style="{StaticResource SetBadge}" Visibility="{Binding FieldsIsSet, Converter={StaticResource BoolToVisibility}}"><TextBlock Text="設定中" Foreground="White" FontSize="11" /></Border></StackPanel></Expander.Header>
                             <StackPanel>
                                 <ui:TextBlock Text="補助項目はまだありません" Style="{StaticResource SecondaryText}"
                                               Visibility="{Binding HasFields, Converter={StaticResource InverseBoolToVisibility}}" />
@@ -570,11 +591,13 @@
                         </Expander>
 
                         <!-- 評価・登録日・最終閲覧日(決定ログ L-4) -->
-                        <Expander Header="評価" Margin="0,0,0,8">
+                        <Expander Margin="0,0,0,8">
+<Expander.Header><StackPanel Orientation="Horizontal"><TextBlock Text="評価" VerticalAlignment="Center" /><Border Style="{StaticResource SetBadge}" Visibility="{Binding RatingIsSet, Converter={StaticResource BoolToVisibility}}"><TextBlock Text="設定中" Foreground="White" FontSize="11" /></Border></StackPanel></Expander.Header>
                             <ComboBox ItemsSource="{Binding RatingFilters}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedRatingFilter}"
                                       AutomationProperties.Name="評価で絞り込み" />
                         </Expander>
-                        <Expander Header="登録日" Margin="0,0,0,8">
+                        <Expander Margin="0,0,0,8">
+<Expander.Header><StackPanel Orientation="Horizontal"><TextBlock Text="登録日" VerticalAlignment="Center" /><Border Style="{StaticResource SetBadge}" Visibility="{Binding RegisteredIsSet, Converter={StaticResource BoolToVisibility}}"><TextBlock Text="設定中" Foreground="White" FontSize="11" /></Border></StackPanel></Expander.Header>
                             <StackPanel>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -591,7 +614,8 @@
                                 <ui:TextBlock Text="{Binding RegisteredError}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
                             </StackPanel>
                         </Expander>
-                        <Expander Header="最終閲覧日" Margin="0,0,0,8">
+                        <Expander Margin="0,0,0,8">
+<Expander.Header><StackPanel Orientation="Horizontal"><TextBlock Text="最終閲覧日" VerticalAlignment="Center" /><Border Style="{StaticResource SetBadge}" Visibility="{Binding LastViewedIsSet, Converter={StaticResource BoolToVisibility}}"><TextBlock Text="設定中" Foreground="White" FontSize="11" /></Border></StackPanel></Expander.Header>
                             <StackPanel>
                                 <Grid IsEnabled="{Binding NeverViewedOnly, Converter={StaticResource InverseBool}}">
                                     <Grid.ColumnDefinitions>
@@ -612,7 +636,8 @@
                         </Expander>
 
                         <!-- 保存先(決定ログ S-6)。ふだんは使わないので折りたたんでおく -->
-                        <Expander Header="保存先" Margin="0,0,0,8" Visibility="{Binding HasSubs, Converter={StaticResource BoolToVisibility}}">
+                        <Expander Margin="0,0,0,8" Visibility="{Binding HasSubs, Converter={StaticResource BoolToVisibility}}">
+<Expander.Header><StackPanel Orientation="Horizontal"><TextBlock Text="保存先" VerticalAlignment="Center" /><Border Style="{StaticResource SetBadge}" Visibility="{Binding StorageIsSet, Converter={StaticResource BoolToVisibility}}"><TextBlock Text="設定中" Foreground="White" FontSize="11" /></Border></StackPanel></Expander.Header>
                             <ComboBox ItemsSource="{Binding StorageFilters}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedStorageFilter}"
                                       AutomationProperties.Name="保存先で絞り込み" />
                         </Expander>

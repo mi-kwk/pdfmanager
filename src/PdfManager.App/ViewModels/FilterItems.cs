@@ -72,6 +72,11 @@ public partial class TagItemSection(TagGroup group, IReadOnlyList<TagFilterItem>
         || tag.AliasNames.Any(a => DocumentSearchIndex.Normalize(a).Contains(normalizedSearch, StringComparison.Ordinal));
 
     public bool HasItems => Items.Count > 0;
+
+    // 決定ログ FB-1: この項目のタグで絞っている(含む・除外)
+    public bool IsSet => Items.Any(i => i.State != TagFilterState.None);
+
+    public void NotifyIsSet() => OnPropertyChanged(nameof(IsSet));
 }
 
 public partial class OptionFilterItem(string value, bool isChecked, Action onChanged) : ObservableObject
@@ -208,7 +213,8 @@ public partial class FieldFilter : ObservableObject
     }
 }
 
-public sealed record RatingFilterOption(string Label, int? MinRating, bool UnratedOnly);
+// MaxRating は「★N だけ」のときの上限(決定ログ FA-4)
+public sealed record RatingFilterOption(string Label, int? MinRating, bool UnratedOnly, int? MaxRating = null);
 
 public sealed record SortOption(SortKey Key, long? FieldId, string Label)
 {

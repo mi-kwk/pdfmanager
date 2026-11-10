@@ -41,6 +41,18 @@ public sealed class AnalyticsTests : IDisposable
 
     private static DateTimeOffset At(int month, int day, int hour = 12) => new(2026, month, day, hour, 0, 0, Jst);
 
+    // 決定ログ FA-1〜FA-3: 評価ごとの件数(最新版だけ)
+    [Fact]
+    public void RatingCounts_CountLatestVersionsOnly()
+    {
+        Exec("UPDATE documents SET rating = 5 WHERE id IN ('a', 'b');");
+        Exec("INSERT INTO version_series (id, name) VALUES ('s', '版'); UPDATE documents SET series_id = 's', version_no = 1 WHERE id = 'a'; UPDATE documents SET series_id = 's', version_no = 2 WHERE id = 'b';");
+
+        var counts = UsageAnalytics.RatingCounts(_connection);
+
+        Assert.Equal([1, 0, 0, 0, 0, 1], counts);
+    }
+
     [Fact]
     public void ViewsAndSearches_AreCountedWithinPeriodAndPc()
     {

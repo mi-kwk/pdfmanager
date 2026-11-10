@@ -249,7 +249,7 @@ public sealed class DocumentSearchIndex
 
     private static bool MatchesRatingAndDates(DocumentEntry entry, SearchQuery query)
     {
-        if ((query.UnratedOnly && entry.Rating != 0) || (query.MinRating is { } minRating && entry.Rating < minRating))
+        if ((query.UnratedOnly && entry.Rating != 0) || (query.MinRating is { } minRating && entry.Rating < minRating) || (query.MaxRating is { } maxRating && entry.Rating > maxRating))
         {
             return false;
         }

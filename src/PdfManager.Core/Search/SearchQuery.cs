@@ -57,6 +57,9 @@ public sealed record SearchQuery
     // 「★N 以上」(決定ログ L-4)
     public int? MinRating { get; init; }
 
+    // 「★N だけ」のときの上限(決定ログ FA-4)
+    public int? MaxRating { get; init; }
+
     public bool UnratedOnly { get; init; }
 
     public DateOnly? RegisteredFrom { get; init; }

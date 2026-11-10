@@ -17,10 +17,13 @@ public partial class AnalyticsWindow : FluentWindow
     private readonly Action<string> _open;
     private readonly Action<string?, string?> _search;
     private readonly Action _openArchive;
+    private readonly Action<int>? _searchRating;
 
-    public AnalyticsWindow(DataFolder dataFolder, Action<string> open, Action<string?, string?> search, Action openArchive)
+    // searchRating:評価(0 は未評価)でメイン画面を絞る(決定ログ FA-4)
+    public AnalyticsWindow(DataFolder dataFolder, Action<string> open, Action<string?, string?> search, Action openArchive, Action<int>? searchRating = null)
     {
         _openArchive = openArchive;
+        _searchRating = searchRating;
         InitializeComponent();
         WindowPlacement.KeepOnScreen(this);
         SystemThemeWatcher.Watch(this);
@@ -81,6 +84,16 @@ public partial class AnalyticsWindow : FluentWindow
         if (sender is ListBox { SelectedItem: TagStatRow row } list)
         {
             _search(null, row.Name);
+            list.SelectedItem = null;
+        }
+    }
+
+    // 決定ログ FA-4: 評価を押すと、メイン画面をその評価だけに絞る
+    private void OnRatingSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox { SelectedItem: RatingRow row } list)
+        {
+            _searchRating?.Invoke(row.Rating);
             list.SelectedItem = null;
         }
     }

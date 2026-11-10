@@ -74,6 +74,8 @@ public sealed class DocumentSearchQueryTests : IDisposable
     public void RatingAndViewedConditions()
     {
         Assert.Equal(["b", "a"], Ids(new SearchQuery { MinRating = 3 }));
+        // 決定ログ FA-4:「★3 だけ」
+        Assert.Equal(["a"], Ids(new SearchQuery { MinRating = 3, MaxRating = 3 }));
         Assert.Equal(["c"], Ids(new SearchQuery { UnratedOnly = true }));
         Assert.Equal(["c", "a"], Ids(new SearchQuery { NeverViewedOnly = true }));
         Assert.Equal(["d"], Ids(new SearchQuery { LastViewedFrom = DateOnly.FromDateTime(At(15).ToLocalTime().DateTime) }));

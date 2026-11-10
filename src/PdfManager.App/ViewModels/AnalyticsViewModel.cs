@@ -14,6 +14,9 @@ public sealed record TagStatRow(long TagId, string Name, int DocumentCount, int 
 
 public sealed record GroupOption(long? Id, string Label);
 
+// 決定ログ FA-1: 評価ごとの件数の 1 行。Rating は 0 が未評価
+public sealed record RatingRow(int Rating, string Label, int Count, string PercentText, double Width);
+
 // SC-22 分析(決定ログ DA-1〜DA-11)。期間と PC を選び、記録から集計して並べる
 public sealed partial class AnalyticsViewModel : ObservableObject
 {
@@ -121,6 +124,21 @@ public sealed partial class AnalyticsViewModel : ObservableObject
     [ObservableProperty]
     public partial string Note { get; set; } = "";
 
+    // 決定ログ FA-1〜FA-3: 評価ごとの件数(★5 から順に、最後に未評価)
+    [ObservableProperty]
+    public partial IReadOnlyList<RatingRow> Ratings { get; set; } = [];
+
+    private void LoadRatings(Microsoft.Data.Sqlite.SqliteConnection connection)
+    {
+        var counts = UsageAnalytics.RatingCounts(connection);
+        var total = Math.Max(1, counts.Sum());
+        var max = Math.Max(1, counts.Max());
+        Ratings = new[] { 5, 4, 3, 2, 1, 0 }
+            .Select(r => new RatingRow(r, r == 0 ? "未評価" : new string('★', r), counts[r],
+                $"{counts[r] * 100.0 / total:0.#}%", counts[r] * TagBarMaxWidth / max))
+            .ToList();
+    }
+
     public void Reload()
     {
         if (_loading)
@@ -153,6 +171,7 @@ public sealed partial class AnalyticsViewModel : ObservableObject
         TagStats = stats.Select(s => new TagStatRow(s.TagId, s.Name, s.DocumentCount, s.ViewCount,
             s.DocumentCount * TagBarMaxWidth / maxDocuments, s.ViewCount * TagBarMaxWidth / maxViews)).ToList();
         LongUnopened = UsageAnalytics.LongUnopened(connection);
+        LoadRatings(connection);
         Note = Summary.ViewCount == 0 && Summary.SearchCount == 0
             ? "この期間には、開いた・検索した記録がありません(記録は分析画面を入れたときから残り始めます。設定で「検索・閲覧の記録を残す」がオフのときは残りません)。"
             : "";
