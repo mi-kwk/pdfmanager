@@ -60,7 +60,8 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <!-- 一部の PDF にだけ付いているタグは薄く表示する(決定ログ F-7) -->
-                                        <Border>
+                                        <!-- 決定ログ EC-4: 子のタグは親の下に字下げする -->
+                                        <Border Margin="{Binding Indent}">
                                             <Border.Style>
                                                 <Style TargetType="Border">
                                                     <Style.Triggers>

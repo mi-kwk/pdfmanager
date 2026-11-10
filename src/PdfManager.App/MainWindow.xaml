@@ -105,7 +105,7 @@
         </DataTemplate>
         <!-- 項目の欄では、グループ名は見出しにあるので、2 行目は紐づけ先だけ -->
         <DataTemplate x:Key="PinnedTagFilterTemplate">
-            <DockPanel Margin="0,1" Background="Transparent">
+            <DockPanel Margin="{Binding Indent}" Background="Transparent">
                 <DockPanel.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="{Binding ExcludeMenuText}" Command="{Binding ToggleExcludeCommand}" />

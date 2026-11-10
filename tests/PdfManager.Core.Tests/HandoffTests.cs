@@ -173,6 +173,32 @@ public sealed class HandoffTests : IDisposable
         Assert.False(Directory.Exists(folder));
     }
 
+    // 決定ログ EC-9: 同じグループの中の親子も一緒に渡す
+    [Fact]
+    public async Task ParentTags_AreHandedOver()
+    {
+        long whisky, scotch;
+        using (var connection = Open(_sender))
+        {
+            var catalog = new CatalogRepository(connection);
+            var drinks = catalog.AddGroup("お酒", 1);
+            whisky = catalog.AddTag("ウィスキー", drinks);
+            scotch = catalog.AddTag("スコッチ・ウイスキー", drinks);
+            catalog.SetTagParentTag(scotch, whisky);
+        }
+        AddDocument(_sender, "a1", "1本目", "a1", scotch, whisky);
+        using var package = HandoffPackage.Open(Export(["a1"]).OutputPath);
+        var plan = HandoffImporter.Plan(_receiverStorage, package);
+        await HandoffImporter.ImportAsync(_receiverStorage, package, plan, new Dictionary<string, HandoffChoice>(), DateTimeOffset.Now);
+
+        Assert.Equal("ウィスキー", Scalar<string>(_receiver, "SELECT p.name FROM tags t JOIN tags p ON p.id = t.parent_tag_id WHERE t.name = 'スコッチ・ウイスキー';"));
+        Assert.Equal("ウィスキー,スコッチ・ウイスキー", TagsOf(_receiver, "a1"));
+
+        // サブにも写る
+        var sub = _receiverStorage.CreateSub(Folder("HDD"), "外付けHDD");
+        Assert.Equal("ウィスキー", Scalar<string>(sub, "SELECT p.name FROM tags t JOIN tags p ON p.id = t.parent_tag_id WHERE t.name = 'スコッチ・ウイスキー';"));
+    }
+
     [Fact]
     public void ChangedSince_ListsDocumentsAddedOrEditedAfterLastHandoff()
     {

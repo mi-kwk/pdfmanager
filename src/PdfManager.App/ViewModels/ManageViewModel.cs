@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using PdfManager.App.Services;
 using PdfManager.Core.Catalog;
 using PdfManager.Core.Database;
+using PdfManager.Core.Library;
 using PdfManager.Core.Search;
 using PdfManager.Core.Storage;
 using PdfManager.Core.Text;
@@ -15,6 +16,12 @@ public sealed record RankChoice(int Rank, string Label);
 
 // タグの所属先の選択肢。Id が null は自由タグ
 public sealed record GroupChoice(long? Id, string Label);
+
+// 同じグループの中の親のタグの選択肢(決定ログ EC-5)。Id が null は親なし
+public sealed record ParentTagChoice(long? Id, string Label)
+{
+    public static ParentTagChoice None { get; } = new(null, "(なし)");
+}
 
 // タグの紐づけ先の候補 1 つ分(決定ログ Q-3)。チェックはすぐに保存する
 public sealed partial class ParentChoice : ObservableObject
@@ -59,12 +66,15 @@ public partial class ManageViewModel : ObservableObject
 
     private readonly DataFolder _dataFolder;
     private readonly IUserDialogs _dialogs;
+    private readonly Func<string?, bool> _isStorageAvailable;
     private IReadOnlyList<TagSummary> _allTags = [];
 
-    public ManageViewModel(DataFolder dataFolder, IUserDialogs dialogs)
+    // isStorageAvailable:保存先(null = メイン)がつながっているか(親のタグをまとめて付けるとき、決定ログ EC-6)
+    public ManageViewModel(DataFolder dataFolder, IUserDialogs dialogs, Func<string?, bool>? isStorageAvailable = null)
     {
         _dataFolder = dataFolder;
         _dialogs = dialogs;
+        _isStorageAvailable = isStorageAvailable ?? (s => s is null);
         NewFieldType = FieldTypeChoices[0];
         NewGroupRank = RankChoices[0];
         TagGroupFilter = AllGroups;
@@ -301,6 +311,84 @@ public partial class ManageViewModel : ObservableObject
 
     public bool IsTagSelected => SelectedTag is not null;
 
+    // ==== 同じグループの中の親のタグ(決定ログ EC-5・EC-6) ====
+
+    [ObservableProperty]
+    public partial IReadOnlyList<ParentTagChoice> ParentTagChoices { get; set; } = [];
+
+    [ObservableProperty]
+    public partial ParentTagChoice? EditParentTag { get; set; }
+
+    // 選んだタグの親にできるもの:同じグループのタグのうち、自分と自分の子孫以外(「ウィスキー › スコッチ」の形で出す)
+    private void BuildParentTagChoices()
+    {
+        if (SelectedTag is not { } tag)
+        {
+            ParentTagChoices = [];
+            EditParentTag = null;
+            return;
+        }
+        var parents = _allTags.ToDictionary(t => t.Id, t => t.ParentTagId);
+        var names = _allTags.ToDictionary(t => t.Id, t => t.Name);
+        var excluded = TagTree.Descendants(tag.Id, parents).Append(tag.Id).ToHashSet();
+        ParentTagChoices =
+        [
+            ParentTagChoice.None,
+            .. _allTags.Where(t => t.GroupId == tag.GroupId && !excluded.Contains(t.Id))
+                .Select(t => new ParentTagChoice(t.Id, TagTree.Path(TagTree.Ancestors(t.Id, parents).Select(id => names[id]), t.Name)))
+                .OrderBy(c => c.Label, StringComparer.Ordinal),
+        ];
+        EditParentTag = ParentTagChoices.FirstOrDefault(c => c.Id == tag.ParentTagId) ?? ParentTagChoice.None;
+    }
+
+    [RelayCommand]
+    private async Task ChangeTagParentAsync()
+    {
+        if (SelectedTag is not { } tag || EditParentTag is not { } choice || choice.Id == tag.ParentTagId)
+        {
+            return;
+        }
+        if (!await RunAsync(c => c.SetTagParentTag(tag.Id, choice.Id)))
+        {
+            return;
+        }
+        // 決定ログ EC-6: このタグが付いているのに親が付いていない PDF があれば、確かめてから親も付ける
+        if (choice.Id is not null)
+        {
+            await AddMissingAncestorsAsync(tag, choice.Label);
+        }
+        ReloadAll(selectTagId: tag.Id);
+    }
+
+    private async Task AddMissingAncestorsAsync(TagSummary tag, string parentLabel)
+    {
+        IReadOnlyList<string> missing;
+        IReadOnlyDictionary<string, string?> storages;
+        using (var connection = PdfManagerDatabase.Open(_dataFolder.DatabasePath))
+        {
+            missing = new CatalogRepository(connection).DocumentsMissingAncestors(tag.Id);
+            storages = new SubLibraryRepository(connection).GetStorageIds(missing);
+        }
+        if (missing.Count == 0)
+        {
+            return;
+        }
+        // つながっていないサブの PDF は直せない(決定ログ S-12)
+        var available = missing.Where(id => _isStorageAvailable(storages.GetValueOrDefault(id))).ToList();
+        var skipped = missing.Count - available.Count;
+        var skippedText = skipped > 0 ? $"\n(つながっていないサブライブラリにある {skipped:N0} 件は、今は付けられません)" : "";
+        if (available.Count == 0)
+        {
+            await _dialogs.ShowErrorAsync($"「{tag.Name}」が付いていて、親のタグが付いていない PDF が {missing.Count:N0} 件ありますが、すべてつながっていないサブライブラリにあるため、今は付けられません。", "親のタグ");
+            return;
+        }
+        if (await _dialogs.ConfirmAsync("親のタグ",
+                $"「{tag.Name}」(またはその下のタグ)が付いている PDF のうち {available.Count:N0} 件には、親のタグ「{parentLabel}」が付いていません。付けますか?{skippedText}", "付ける"))
+        {
+            await RunAsync(c => c.AddMissingAncestors(available, DateTimeOffset.UtcNow));
+        }
+    }
+
     partial void OnTagFilterChanged(string value) => ApplyTagFilter(SelectedTag?.Id);
 
     partial void OnTagGroupFilterChanged(GroupChoice value) => ApplyTagFilter(SelectedTag?.Id);
@@ -316,6 +404,7 @@ public partial class ManageViewModel : ObservableObject
         MergeTarget = null;
         ParentFilter = "";
         BuildParentChoices();
+        BuildParentTagChoices();
     }
 
     // 決定ログ Q-3: 紐づけられるのは、1 つ上の順位のタググループのタグ

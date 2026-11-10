@@ -8,11 +8,11 @@ namespace PdfManager.App;
 
 public partial class ManageWindow : FluentWindow
 {
-    public ManageWindow(DataFolder dataFolder)
+    public ManageWindow(DataFolder dataFolder, Func<string?, bool>? isStorageAvailable = null)
     {
         InitializeComponent();
         WindowPlacement.KeepOnScreen(this);
-        DataContext = new ManageViewModel(dataFolder, new WpfUiDialogs(this));
+        DataContext = new ManageViewModel(dataFolder, new WpfUiDialogs(this), isStorageAvailable);
         SystemThemeWatcher.Watch(this);
     }
 }

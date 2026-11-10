@@ -218,6 +218,11 @@ public partial class TagChoice : ObservableObject
 
     public string Label => IsNew ? $"{Name}(新規)" : Name;
 
+    // 決定ログ EC-4: 同じグループの中の親の数(字下げの深さ)
+    public int Depth { get; init; }
+
+    public System.Windows.Thickness Indent => new(Depth * 20, 0, 0, 0);
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsPartial))]
     public partial bool? IsChecked { get; set; }

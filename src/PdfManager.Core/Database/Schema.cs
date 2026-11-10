@@ -6,6 +6,12 @@ namespace PdfManager.Core.Database;
 // docs/03_データ設計.md に対応。全文検索用の FTS5 索引は M3(検索)で追加する。
 internal static class Schema
 {
+    // 同じグループの中の親のタグ(サブカテゴリ、決定ログ EC-1〜EC-9)。親は 1 つだけで、何段でも作れる。親を消すと子は親なしになる
+    public const string V11 = """
+        ALTER TABLE tags ADD COLUMN parent_tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL;
+        CREATE INDEX ix_tags_parent ON tags(parent_tag_id);
+        """;
+
     // 分析画面のための記録(決定ログ DA-1〜DA-5)。PDF を開いた記録と、検索の記録。pc は記録した PC の名前(DA-4)。
     // 開いた記録は文書を削除すると消える。検索の記録の tag_names は「、」区切り(タグを消したり名前を変えたりしても、記録したときの名前で残す)
     public const string V10 = """

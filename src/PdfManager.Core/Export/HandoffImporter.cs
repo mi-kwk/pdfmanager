@@ -343,6 +343,19 @@ public static class HandoffImporter
                 }
             }
         }
+        // 決定ログ EC-9: 同じグループの中の親。この PC で親を決めていないタグだけ、受け渡しに合わせる(輪になるものは付けない)
+        foreach (var tag in manifest.Tags.Where(t => t.ParentTag is not null))
+        {
+            if (definitions.Tag(tag.Name) is { } child && definitions.Tag(tag.ParentTag!) is { } parentId && child != parentId)
+            {
+                Execute(connection, transaction, """
+                    UPDATE tags SET parent_tag_id = $p WHERE id = $c AND parent_tag_id IS NULL
+                      AND COALESCE(group_id, -1) = COALESCE((SELECT group_id FROM tags WHERE id = $p), -1)
+                      AND NOT EXISTS (WITH RECURSIVE up(id) AS (SELECT $p UNION SELECT t.parent_tag_id FROM tags t JOIN up ON t.id = up.id WHERE t.parent_tag_id IS NOT NULL)
+                                      SELECT 1 FROM up WHERE id = $c);
+                    """, ("$c", child), ("$p", parentId));
+            }
+        }
         var fieldOrder = Rows(connection, transaction, "SELECT COALESCE(MAX(sort_order), 0) FROM fields;", r => r.GetInt64(0)).Single();
         foreach (var field in manifest.Fields.Where(f => !definitions.Fields.ContainsKey(f.Name)))
         {

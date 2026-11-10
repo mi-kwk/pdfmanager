@@ -17,6 +17,11 @@ public partial class TagFilterItem(TagSummary tag, TagFilterState state, Action 
 {
     public TagSummary Tag { get; } = tag;
 
+    // 決定ログ EC-4: 項目の欄で、同じグループの中の親の数だけ字下げする
+    public int Depth { get; set; }
+
+    public System.Windows.Thickness Indent => new(Depth * 18, 1, 0, 1);
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsChecked), nameof(IsExcluded), nameof(ExcludeMenuText))]
     public partial TagFilterState State { get; set; } = state;

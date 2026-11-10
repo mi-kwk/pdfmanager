@@ -114,6 +114,9 @@ public partial class ImportViewModel : ObservableObject, IDisposable
     // 画像・ZIP から PDF を作る画面を開く(画像, ZIP, 作業フォルダ)。キャンセルしたときは空を返す(F-26、決定ログ Y-1)
     public Func<IReadOnlyList<string>, IReadOnlyList<string>, string, IReadOnlyList<CreatedPdf>>? CreatePdfsFromImages { get; set; }
 
+    // 決定ログ ED-3: PDF を登録・保留・削除予定へ移す前に、ビューアのタブを閉じてもらう(元の場所のパスを渡す)
+    public Action<IReadOnlyCollection<string>>? ReleaseFiles { get; set; }
+
     // 「取り込まない」を切り替えたとき(決定ログ R-4)
     private void OnItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -315,6 +318,7 @@ public partial class ImportViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void RemoveSelected()
     {
+        ReleaseFiles?.Invoke(_selection.Select(i => i.SourcePath).ToList());
         foreach (var item in _selection.ToList())
         {
             Items.Remove(item);
@@ -465,6 +469,7 @@ public partial class ImportViewModel : ObservableObject, IDisposable
                     {
                         lastWithInput = item;
                     }
+                    ReleaseFiles?.Invoke([item.SourcePath]);
                     Items.Remove(item);
                     if (result.Warning is not null)
                     {
@@ -645,6 +650,8 @@ public partial class ImportViewModel : ObservableObject, IDisposable
         var moved = 0;
         var problems = new List<string>();
         var insertAt = Items.Count(i => i.IsHeld);
+        // 決定ログ ED-3: 移す前に、ビューアで開いていれば閉じる(開いたままだと移せないことがある)
+        ReleaseFiles?.Invoke(targets.Select(t => t.SourcePath).ToList());
         foreach (var item in targets)
         {
             // 画像・ZIP から作った PDF は作業用のファイルなので、元の画像・ZIP は動かせない

@@ -49,8 +49,9 @@ public partial class DocumentEditor : ObservableObject
     private sealed record PendingTag(string Name, long? GroupId, IReadOnlyList<string> ParentKeys);
 
     // タグ 1 つ分の情報(登録済みと、まだ登録していない新しいタグをまとめて扱う)。Id・UsageCount・Aliases は登録済みのタグだけ
+    // ParentTagKey は同じグループの中の親のタグ(決定ログ EC-2)
     private sealed record TagInfo(string Key, string Name, long? GroupId, IReadOnlyList<string> ParentKeys, bool IsNew,
-        long? Id = null, long UsageCount = 0, IReadOnlyList<string>? Aliases = null)
+        long? Id = null, long UsageCount = 0, IReadOnlyList<string>? Aliases = null, string? ParentTagKey = null)
     {
         public IReadOnlyList<string> AliasNames => Aliases ?? [];
 
@@ -590,10 +591,44 @@ public partial class DocumentEditor : ObservableObject
 
     private IEnumerable<TagInfo> AllTags() => _tags.Values
         .Select(t => new TagInfo(NameNormalizer.Normalize(t.Name), t.Name, t.GroupId,
-            t.ParentIds.Select(id => _tagKeysById.GetValueOrDefault(id)).OfType<string>().ToList(), false, t.Id, t.UsageCount, t.AliasNames))
+            t.ParentIds.Select(id => _tagKeysById.GetValueOrDefault(id)).OfType<string>().ToList(), false, t.Id, t.UsageCount, t.AliasNames,
+            t.ParentTagId is { } parent ? _tagKeysById.GetValueOrDefault(parent) : null))
         .Concat(_pendingTags.Select(p => new TagInfo(p.Key, p.Value.Name, p.Value.GroupId, p.Value.ParentKeys, true)));
 
     private int? RankOf(long? groupId) => groupId is { } id && _groups.TryGetValue(id, out var group) ? group.Rank : null;
+
+    // ==== 同じグループの中の親子(決定ログ EC-2・EC-3) ====
+
+    private static Dictionary<string, string?> ParentTagMap(IEnumerable<TagInfo> all) =>
+        all.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.First().ParentTagKey);
+
+    // 親・その上の親…
+    private IReadOnlyList<string> AncestorKeys(string key)
+    {
+        var parents = ParentTagMap(AllTags());
+        return TagTree.Ancestors(key, k => parents.GetValueOrDefault(k));
+    }
+
+    // 子・孫…
+    private static IReadOnlyList<string> DescendantKeys(string key, IReadOnlyDictionary<string, string?> parents)
+    {
+        var children = parents.Where(p => p.Value is not null).ToLookup(p => p.Value!, p => p.Key);
+        var result = new List<string>();
+        var queue = new Queue<string>([key]);
+        var seen = new HashSet<string> { key };
+        while (queue.Count > 0)
+        {
+            foreach (var child in children[queue.Dequeue()])
+            {
+                if (seen.Add(child))
+                {
+                    result.Add(child);
+                    queue.Enqueue(child);
+                }
+            }
+        }
+        return result;
+    }
 
     // 対象のどれかに付いている、指定した順位のタグ(紐づくタグを表示するための親)
     private HashSet<string> CheckedKeysOfRank(int rank) => AllTags()
@@ -653,7 +688,9 @@ public partial class DocumentEditor : ObservableObject
             var parents = section.Group is { Rank: >= 2 } group ? CheckedKeysOfRank(group.Rank - 1).ToList() : [];
             _pendingTags[key] = new PendingTag(name, groupId, parents);
         }
-        ApplyEdit(i => i.TagKeys.Add(key));
+        // 決定ログ EC-3: 子を付けたら親(上の親も)も付ける
+        var withAncestors = AncestorKeys(key).Prepend(key).ToList();
+        ApplyEdit(i => i.TagKeys.UnionWith(withAncestors));
         section.Search = "";
         RebuildPrefixOptions();
         RefreshTagChoices();
@@ -669,20 +706,23 @@ public partial class DocumentEditor : ObservableObject
             return;
         }
         var add = choice.IsChecked != false;
+        // 決定ログ EC-3: 子を付けたら親(上の親も)も付け、親を外したら子(その下も)も外す
+        var related = add ? AncestorKeys(choice.Key) : DescendantKeys(choice.Key, ParentTagMap(AllTags()));
+        var keys = related.Prepend(choice.Key).ToList();
         foreach (var item in _targets)
         {
             if (add)
             {
-                item.TagKeys.Add(choice.Key);
+                item.TagKeys.UnionWith(keys);
             }
             else
             {
-                item.TagKeys.Remove(choice.Key);
+                item.TagKeys.ExceptWith(keys);
             }
         }
-        // 押した欄はそのまま(押した直後に並びが変わらないように)、紐づくタグの欄などを更新する
+        // 押した欄はそのまま(押した直後に並びが変わらないように)、紐づくタグの欄などを更新する。親子も変わったときは押した欄も更新する
         var section = TagSections.FirstOrDefault(s => s.Choices.Contains(choice));
-        RefreshTagChoices(keep: section);
+        RefreshTagChoices(keep: related.Count == 0 ? section : null);
         RebuildPrefixOptions();
         UpdateFileNamePreview();
         Edited?.Invoke();
@@ -907,9 +947,9 @@ public partial class DocumentEditor : ObservableObject
         }
         else if (section.Group is { Rank: >= 2 } group)
         {
-            var parents = CheckedKeysOfRank(group.Rank - 1);
-            visible = members.Where(t => counts[t.Key] > 0 || t.ParentKeys.Any(parents.Contains));
-            section.Hint = parents.Count == 0
+            var upper = CheckedKeysOfRank(group.Rank - 1);
+            visible = members.Where(t => counts[t.Key] > 0 || t.ParentKeys.Any(upper.Contains));
+            section.Hint = upper.Count == 0
                 ? $"「{TagRanks.Label(group.Rank - 1)}」のタグを選ぶと、紐づくタグが表示されます。検索欄で探して付けることもできます。"
                 : visible.Any() ? "" : "選んだタグに紐づくタグはありません。検索欄で探して付けられます。";
         }
@@ -918,12 +958,40 @@ public partial class DocumentEditor : ObservableObject
             visible = members;
             section.Hint = members.Count == 0 ? "タグがありません。検索欄に入力して Enter で追加できます。" : "";
         }
-        section.Choices = visible
-            .Select(t =>
+        // 決定ログ EC-4: 子は親のすぐ下に字下げして並べる。付いているタグ(子孫に付いているものを含む)を先に
+        var parents = ParentTagMap(members);
+        var visibleList = visible.ToList();
+        if (search.Length == 0)
+        {
+            // 親が見えていれば、その子孫も見せる(紐づけのない子も親と一緒に出るように)
+            var shown = visibleList.Select(t => t.Key).ToHashSet();
+            foreach (var key in shown.ToList())
             {
+                shown.UnionWith(DescendantKeys(key, parents));
+            }
+            visibleList = members.Where(t => shown.Contains(t.Key)).ToList();
+        }
+        var used = members.Where(t => counts[t.Key] > 0).SelectMany(t => TagTree.Ancestors(t.Key, k => parents.GetValueOrDefault(k)).Prepend(t.Key)).ToHashSet();
+        var order = Comparer<TagInfo>.Create((a, b) =>
+            used.Contains(a.Key) != used.Contains(b.Key) ? (used.Contains(a.Key) ? -1 : 1) : string.CompareOrdinal(a.Key, b.Key));
+        var ordered = search.Length == 0
+            ? TagTree.Order(visibleList, t => t.Key, t => t.ParentTagKey, order)
+            : visibleList.OrderBy(t => t, order).Select(t => (Item: t, Depth: 0)).ToList();
+        var names = members.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.First().Name);
+        section.Choices = ordered
+            .Select(x =>
+            {
+                var t = x.Item;
                 var count = counts[t.Key];
                 bool? state = count == 0 ? false : count == _targets.Count ? true : null;
                 var detail = section.IsDependent ? string.Join("、", t.ParentKeys.Select(TagDisplayName)) : "";
+                // 決定ログ EC-4: 検索で探したときは「ウィスキー › スコッチ・ウイスキー」と出す
+                var ancestors = TagTree.Ancestors(t.Key, k => parents.GetValueOrDefault(k));
+                if (search.Length > 0 && ancestors.Count > 0)
+                {
+                    var path = TagTree.Path(ancestors.Select(k => names.GetValueOrDefault(k, k)), t.Name);
+                    detail = detail.Length == 0 ? path : $"{path} ・ {detail}";
+                }
                 // 別名で見つかったときは、どの別名かを出す
                 if (search.Length > 0 && !NameMatches(t) && t.AliasNames.FirstOrDefault(a => DocumentSearchIndex.Normalize(a).Contains(search, StringComparison.Ordinal)) is { } alias)
                 {
@@ -931,10 +999,8 @@ public partial class DocumentEditor : ObservableObject
                 }
                 var canEdit = t.IsNew || CatalogWriter is not null;
                 return new TagChoice(t.Key, t.Name, detail, t.IsNew, state, OnTagToggled,
-                    canEdit && section.IsDependent ? EditLinksAsync : null, canEdit ? RenameTagAsync : null);
+                    canEdit && section.IsDependent ? EditLinksAsync : null, canEdit ? RenameTagAsync : null) { Depth = x.Depth };
             })
-            .OrderByDescending(c => c.IsChecked != false)
-            .ThenBy(c => c.Key, StringComparer.Ordinal)
             .ToList();
     }
 

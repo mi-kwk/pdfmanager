@@ -93,7 +93,7 @@
                     <ui:Button DockPanel.Dock="Bottom" Content="一覧から外す" Icon="{ui:SymbolIcon Dismiss24}" Margin="0,8,0,0"
                                HorizontalAlignment="Stretch" Command="{Binding RemoveSelectedCommand}" />
                     <!-- 決定ログ DD-5: 保留の PDF は一覧の上にまとめ、初めは閉じておく(見出しを押すと開く) -->
-                    <ListBox x:Name="ItemList" ItemsSource="{Binding Items}" SelectionMode="Extended"
+                    <ListBox x:Name="ItemList" ItemsSource="{Binding Items}" SelectionMode="Extended" MouseDoubleClick="OnItemDoubleClick"
                              SelectedItem="{Binding PrimarySelection}" SelectionChanged="OnSelectionChanged"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="取り込み待ち">
                         <ListBox.InputBindings>
@@ -170,10 +170,14 @@
             </Border>
 
             <!-- 中央:1 ページ目のプレビュー(決定ログ F-4) -->
-            <Border Grid.Column="2" Style="{StaticResource PaneBorder}">
-                <DockPanel>
+            <!-- 決定ログ ED-1: ダブルクリックで PDF を開く -->
+            <Border Grid.Column="2" Style="{StaticResource PaneBorder}" MouseLeftButtonDown="OnPreviewMouseDown"
+                    ToolTip="ダブルクリックで PDF を開いて、中身を確かめられます" AutomationProperties.Name="1 ページ目のプレビュー">
+                <DockPanel Background="Transparent">
                     <ui:TextBlock DockPanel.Dock="Bottom" Text="{Binding PreviewMessage}" Style="{StaticResource Hint}"
                                   HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    <ui:TextBlock DockPanel.Dock="Bottom" Text="ダブルクリックで PDF を開きます" Style="{StaticResource Hint}"
+                                  HorizontalAlignment="Center" Margin="0,4,0,0" />
                     <Image Source="{Binding PreviewImage}" Stretch="Uniform" />
                 </DockPanel>
             </Border>

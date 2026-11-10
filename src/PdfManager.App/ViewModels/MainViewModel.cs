@@ -1071,9 +1071,25 @@ public partial class MainViewModel : ObservableObject
         // 決定ログ Q-14: 項目(左に常に表示するタググループ)
         var searches = ItemSections.ToDictionary(s => s.Group.Id, s => s.Search);
         ItemSections = groups.Where(g => g.IsPinned).OrderBy(g => g.PinOrder).ThenBy(g => g.Id)
-            .Select(g => new TagItemSection(g, TagFilters.Where(t => t.Tag.GroupId == g.Id).ToList()) { Search = searches.GetValueOrDefault(g.Id, "") })
+            .Select(g => new TagItemSection(g, InTreeOrder(TagFilters.Where(t => t.Tag.GroupId == g.Id))) { Search = searches.GetValueOrDefault(g.Id, "") })
             .ToList();
         UpdateOtherTags();
+    }
+
+    // 決定ログ EC-4: 子のタグを親のすぐ下に並べ、字下げの深さを付ける(同じ親の中は名前の順)
+    private static List<TagFilterItem> InTreeOrder(IEnumerable<TagFilterItem> items)
+    {
+        var list = items.ToList();
+        var position = list.Select((item, i) => (item, i)).ToDictionary(x => x.item, x => x.i);
+        var ordered = Core.Catalog.TagTree.Order(list,
+            i => i.Tag.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            i => i.Tag.ParentTagId?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Comparer<TagFilterItem>.Create((a, b) => position[a].CompareTo(position[b])));
+        foreach (var (item, depth) in ordered)
+        {
+            item.Depth = depth;
+        }
+        return ordered.Select(o => o.Item).ToList();
     }
 
     // 決定ログ DB-2: タグの定義だけを読み直す(詳細で編集中の内容と、今の検索結果はそのまま)

@@ -85,10 +85,16 @@ public sealed record TagSummary(long Id, string Name, long UsageCount, long? Gro
 
     public string ParentText => string.Join("、", ParentNames);
 
+    // 同じグループの中の親のタグ(サブカテゴリ、決定ログ EC-2)。上の順位への紐づけ(ParentIds)とは別
+    public long? ParentTagId { get; init; }
+
+    public string? ParentTagName { get; init; }
+
     public bool HasParents => ParentNames.Count > 0;
 
     // 一覧などの 2 行目:「分類２ ・ 漫画、雑誌」
     public string DetailText => (ParentNames.Count == 0 ? GroupLabel : $"{GroupLabel} ・ {string.Join("、", ParentNames)}")
+        + (ParentTagName is { } parent ? $" ・ 親:{parent}" : "")
         + (AliasNames.Count == 0 ? "" : $" ・ 別名:{AliasText}");
 }
 

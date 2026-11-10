@@ -220,8 +220,8 @@ public sealed class CatalogRepository(SqliteConnection connection)
 
         return Query(
             """
-            SELECT t.id, t.name, (SELECT COUNT(*) FROM document_tags d WHERE d.tag_id = t.id), t.group_id, g.name
-            FROM tags t LEFT JOIN tag_groups g ON g.id = t.group_id ORDER BY t.normalized_name;
+            SELECT t.id, t.name, (SELECT COUNT(*) FROM document_tags d WHERE d.tag_id = t.id), t.group_id, g.name, t.parent_tag_id, pt.name
+            FROM tags t LEFT JOIN tag_groups g ON g.id = t.group_id LEFT JOIN tags pt ON pt.id = t.parent_tag_id ORDER BY t.normalized_name;
             """,
             r =>
             {
@@ -229,8 +229,135 @@ public sealed class CatalogRepository(SqliteConnection connection)
                 return new TagSummary(r.GetInt64(0), r.GetString(1), r.GetInt64(2),
                     r.IsDBNull(3) ? null : r.GetInt64(3), r.IsDBNull(4) ? null : r.GetString(4),
                     links.Select(l => l.ParentId).ToList(), links.Select(l => l.ParentName).ToList(),
-                    aliases[r.GetInt64(0)].ToList());
+                    aliases[r.GetInt64(0)].ToList())
+                {
+                    ParentTagId = r.IsDBNull(5) ? null : r.GetInt64(5),
+                    ParentTagName = r.IsDBNull(6) ? null : r.GetString(6),
+                };
             });
+    }
+
+    // ---- 同じグループの中の親のタグ(サブカテゴリ、決定ログ EC-1〜EC-9) ----
+
+    // 親は同じグループ(自由タグなら自由タグ)のタグ 1 つだけ。自分や自分の子孫は親にできない。null で親なし
+    public void SetTagParentTag(long tagId, long? parentTagId)
+    {
+        if (parentTagId is { } parentId)
+        {
+            var tags = GetTags().ToDictionary(t => t.Id);
+            if (!tags.TryGetValue(tagId, out var tag) || !tags.TryGetValue(parentId, out var parent))
+            {
+                throw new CatalogException("タグが見つかりません。");
+            }
+            if (parentId == tagId)
+            {
+                throw new CatalogException("自分自身は親にできません。");
+            }
+            if (tag.GroupId != parent.GroupId)
+            {
+                throw new CatalogException("親にできるのは、同じタググループのタグだけです。");
+            }
+            if (TagTree.Descendants(tagId, tags.ToDictionary(t => t.Key, t => t.Value.ParentTagId)).Contains(parentId))
+            {
+                throw new CatalogException($"「{parent.Name}」は「{tag.Name}」の下にあるタグのため、親にできません。");
+            }
+        }
+        Execute("UPDATE tags SET parent_tag_id = $parent WHERE id = $id;", ("$parent", (object?)parentTagId ?? DBNull.Value), ("$id", tagId));
+    }
+
+    // 決定ログ EC-6: このタグ(とその子孫)が付いているのに、その親(上の親も)が付いていない PDF
+    public IReadOnlyList<string> DocumentsMissingAncestors(long tagId)
+    {
+        var subtree = TagTree.Descendants(tagId, ParentTagMap()).Append(tagId).ToHashSet();
+        return Query($"""
+            {AncestorsCte}
+            SELECT DISTINCT dt.document_id FROM document_tags dt JOIN anc a ON a.tag_id = dt.tag_id
+            WHERE dt.tag_id IN ({string.Join(",", subtree)})
+              AND NOT EXISTS (SELECT 1 FROM document_tags x WHERE x.document_id = dt.document_id AND x.tag_id = a.ancestor_id)
+            ORDER BY dt.document_id;
+            """, r => r.GetString(0));
+    }
+
+    // 決定ログ EC-3・EC-6: PDF に付いているタグの親(上の親も)を付ける。付けた PDF の変更日を now にする
+    public int AddMissingAncestors(IReadOnlyCollection<string> documentIds, DateTimeOffset now)
+    {
+        if (documentIds.Count == 0)
+        {
+            return 0;
+        }
+        using var transaction = connection.BeginTransaction();
+        Execute("CREATE TEMP TABLE IF NOT EXISTS ancestor_docs (id TEXT PRIMARY KEY); DELETE FROM temp.ancestor_docs;", transaction);
+        foreach (var id in documentIds.Distinct())
+        {
+            Execute("INSERT INTO temp.ancestor_docs (id) VALUES ($id);", transaction, ("$id", id));
+        }
+        Execute($"""
+            {AncestorsCte}
+            UPDATE documents SET updated_at = $now WHERE id IN (
+                SELECT dt.document_id FROM document_tags dt JOIN anc a ON a.tag_id = dt.tag_id
+                WHERE dt.document_id IN (SELECT id FROM temp.ancestor_docs)
+                  AND NOT EXISTS (SELECT 1 FROM document_tags x WHERE x.document_id = dt.document_id AND x.tag_id = a.ancestor_id));
+            """, transaction, ("$now", now.UtcDateTime.ToString("O")));
+        using var command = CreateCommand($"""
+            {AncestorsCte}
+            INSERT OR IGNORE INTO document_tags (document_id, tag_id)
+            SELECT DISTINCT dt.document_id, a.ancestor_id FROM document_tags dt JOIN anc a ON a.tag_id = dt.tag_id
+            WHERE dt.document_id IN (SELECT id FROM temp.ancestor_docs);
+            """, transaction, []);
+        var added = command.ExecuteNonQuery();
+        transaction.Commit();
+        return added;
+    }
+
+    // タグ → 親・その上の親…(すべての組)
+    private const string AncestorsCte = """
+        WITH RECURSIVE anc(tag_id, ancestor_id) AS (
+            SELECT id, parent_tag_id FROM tags WHERE parent_tag_id IS NOT NULL
+            UNION
+            SELECT a.tag_id, t.parent_tag_id FROM anc a JOIN tags t ON t.id = a.ancestor_id WHERE t.parent_tag_id IS NOT NULL AND t.parent_tag_id <> a.tag_id)
+        """;
+
+    private Dictionary<long, long?> ParentTagMap() =>
+        Query("SELECT id, parent_tag_id FROM tags;", r => (Id: r.GetInt64(0), Parent: r.IsDBNull(1) ? (long?)null : r.GetInt64(1)))
+            .ToDictionary(x => x.Id, x => x.Parent);
+
+    // グループが変わって親と子のグループが合わなくなったら、親を外す。輪になったものも外す
+    private void RemoveInvalidParentTags(SqliteTransaction transaction)
+    {
+        Execute("""
+            UPDATE tags SET parent_tag_id = NULL WHERE parent_tag_id IS NOT NULL
+              AND (parent_tag_id = id OR COALESCE(group_id, -1) <> COALESCE((SELECT p.group_id FROM tags p WHERE p.id = tags.parent_tag_id), -1));
+            """, transaction);
+        var parents = new Dictionary<long, long?>();
+        using (var command = CreateCommand("SELECT id, parent_tag_id FROM tags;", transaction, []))
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                parents[reader.GetInt64(0)] = reader.IsDBNull(1) ? null : reader.GetInt64(1);
+            }
+        }
+        foreach (var (id, parent) in parents.ToList())
+        {
+            if (parent is not null && TagTree.Ancestors(id, parents).Count > 0 && LoopsBack(id, parents))
+            {
+                parents[id] = null;
+                Execute("UPDATE tags SET parent_tag_id = NULL WHERE id = $id;", transaction, ("$id", id));
+            }
+        }
+    }
+
+    private static bool LoopsBack(long id, IReadOnlyDictionary<long, long?> parents)
+    {
+        var seen = new HashSet<long>();
+        for (long? current = id; current is { } value; current = parents.GetValueOrDefault(value))
+        {
+            if (!seen.Add(value))
+            {
+                return value == id;
+            }
+        }
+        return false;
     }
 
     public long AddTag(string name, long? groupId = null, IReadOnlyCollection<long>? parentIds = null)
@@ -272,6 +399,8 @@ public sealed class CatalogRepository(SqliteConnection connection)
         using var transaction = connection.BeginTransaction();
         Execute("UPDATE tags SET group_id = $group WHERE id = $id;", transaction, ("$group", (object?)groupId ?? DBNull.Value), ("$id", tagId));
         RemoveInvalidLinks(transaction);
+        // 決定ログ EC-1: 親子は同じグループの中だけ
+        RemoveInvalidParentTags(transaction);
         transaction.Commit();
     }
 
@@ -343,8 +472,15 @@ public sealed class CatalogRepository(SqliteConnection connection)
             INSERT OR IGNORE INTO tag_links (child_id, parent_id) SELECT $target, parent_id FROM tag_links WHERE child_id = $source AND parent_id <> $target;
             INSERT OR IGNORE INTO tag_links (child_id, parent_id) SELECT child_id, $target FROM tag_links WHERE parent_id = $source AND child_id <> $target;
             """, transaction, ("$target", targetTagId), ("$source", sourceTagId));
+        // 決定ログ EC-8: 親子も引き継ぐ(子は統合先の子に、統合先に親がなければ消えるタグの親を使う)
+        Execute("""
+            UPDATE tags SET parent_tag_id = $target WHERE parent_tag_id = $source AND id <> $target;
+            UPDATE tags SET parent_tag_id = (SELECT parent_tag_id FROM tags WHERE id = $source)
+                WHERE id = $target AND parent_tag_id IS NULL AND (SELECT parent_tag_id FROM tags WHERE id = $source) <> $target;
+            """, transaction, ("$target", targetTagId), ("$source", sourceTagId));
         Execute("DELETE FROM tags WHERE id = $source;", transaction, ("$source", sourceTagId));
         RemoveInvalidLinks(transaction);
+        RemoveInvalidParentTags(transaction);
         transaction.Commit();
     }
 

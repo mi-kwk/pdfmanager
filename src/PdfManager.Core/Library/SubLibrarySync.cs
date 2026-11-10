@@ -135,8 +135,9 @@ public static class SubLibrarySync
             ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, sort_order = excluded.sort_order;
         INSERT INTO sub.field_options (id, field_id, value, sort_order) SELECT id, field_id, value, sort_order FROM main.field_options WHERE true
             ON CONFLICT(id) DO UPDATE SET field_id = excluded.field_id, value = excluded.value, sort_order = excluded.sort_order;
-        INSERT INTO sub.tags (id, name, normalized_name, group_id) SELECT id, name, normalized_name, group_id FROM main.tags WHERE true
-            ON CONFLICT(id) DO UPDATE SET name = excluded.name, normalized_name = excluded.normalized_name, group_id = excluded.group_id;
+        INSERT INTO sub.tags (id, name, normalized_name, group_id, parent_tag_id) SELECT id, name, normalized_name, group_id, parent_tag_id FROM main.tags WHERE true
+            ON CONFLICT(id) DO UPDATE SET name = excluded.name, normalized_name = excluded.normalized_name, group_id = excluded.group_id,
+                parent_tag_id = excluded.parent_tag_id;
         INSERT INTO sub.tag_links (child_id, parent_id) SELECT child_id, parent_id FROM main.tag_links;
         """, transaction);
 

@@ -27,8 +27,8 @@ public sealed record HandoffManifest(
 
 public sealed record HandoffGroup(string Name, int Rank, bool IsPinned, int PinOrder, int SortOrder);
 
-// Group は null なら自由タグ。Parents は紐づく上の順位のタグの名前
-public sealed record HandoffTag(string Name, string? Group, IReadOnlyList<string> Parents);
+// Group は null なら自由タグ。Parents は紐づく上の順位のタグの名前。ParentTag は同じグループの中の親のタグの名前(決定ログ EC-9)
+public sealed record HandoffTag(string Name, string? Group, IReadOnlyList<string> Parents, string? ParentTag = null);
 
 public sealed record HandoffField(string Name, string Type);
 
@@ -131,8 +131,12 @@ public static class HandoffFormat
             documents.Add(Read(row, id, file, tags.Select(t => t.Name).ToList(), values, texts));
         }
 
-        // 紐づく上の順位のタグもたどる
-        var links = Rows(connection, "SELECT child_id, parent_id FROM tag_links;", null, r => (Child: r.GetInt64(0), Parent: r.GetInt64(1)));
+        // 紐づく上の順位のタグと、同じグループの中の親のタグもたどる
+        var links = Rows(connection, "SELECT child_id, parent_id FROM tag_links UNION SELECT id, parent_tag_id FROM tags WHERE parent_tag_id IS NOT NULL;", null,
+            r => (Child: r.GetInt64(0), Parent: r.GetInt64(1)));
+        var parentTags = Rows(connection, "SELECT id, parent_tag_id FROM tags WHERE parent_tag_id IS NOT NULL;", null, r => (Id: r.GetInt64(0), Parent: r.GetInt64(1)))
+            .ToDictionary(x => x.Id, x => x.Parent);
+        var rankLinks = Rows(connection, "SELECT child_id, parent_id FROM tag_links;", null, r => (Child: r.GetInt64(0), Parent: r.GetInt64(1)));
         var queue = new Queue<long>(usedTags);
         while (queue.Count > 0)
         {
@@ -149,7 +153,8 @@ public static class HandoffFormat
             r => (Id: r.GetInt64(0), Name: r.GetString(1), Group: r.IsDBNull(2) ? null : r.GetString(2))).Where(t => usedTags.Contains(t.Id)).ToList();
         var names = tagRows.ToDictionary(t => t.Id, t => t.Name);
         var tagsOut = tagRows.Select(t => new HandoffTag(t.Name, t.Group,
-            links.Where(l => l.Child == t.Id && names.ContainsKey(l.Parent)).Select(l => names[l.Parent]).Order(StringComparer.Ordinal).ToList())).ToList();
+            rankLinks.Where(l => l.Child == t.Id && names.ContainsKey(l.Parent)).Select(l => names[l.Parent]).Order(StringComparer.Ordinal).ToList(),
+            parentTags.TryGetValue(t.Id, out var parent) && names.TryGetValue(parent, out var parentName) ? parentName : null)).ToList();
         var usedGroups = tagRows.Select(t => t.Group).OfType<string>().ToHashSet();
         var groups = Rows(connection, "SELECT name, rank, is_pinned, pin_order, sort_order FROM tag_groups ORDER BY sort_order, id;", null,
             r => new HandoffGroup(r.GetString(0), r.GetInt32(1), r.GetBoolean(2), r.GetInt32(3), r.GetInt32(4))).Where(g => usedGroups.Contains(g.Name)).ToList();

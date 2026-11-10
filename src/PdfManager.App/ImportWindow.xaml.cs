@@ -51,9 +51,54 @@ public partial class ImportWindow : FluentWindow
                 Dispatcher.BeginInvoke(Close);
             }
         };
+        // 決定ログ ED-3: 登録・保留・削除予定へ移す前に、ビューアのタブを閉じる
+        _viewModel.ReleaseFiles = paths => _viewer?.CloseDocuments(paths);
         SystemThemeWatcher.Watch(this);
         Closing += OnClosing;
-        Closed += (_, _) => _viewModel.Dispose();
+        Closed += (_, _) =>
+        {
+            _viewer?.Close();
+            _viewModel.Dispose();
+        };
+    }
+
+    // ==== PDF を開く(決定ログ ED-1〜ED-4) ====
+
+    // 登録する前の PDF を見るビューア。この画面の上に開き、この画面を閉じたら閉じる
+    private ViewerWindow? _viewer;
+
+    private void OnPreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2 && _viewModel.PrimarySelection is { } item)
+        {
+            e.Handled = true;
+            OpenInViewer(item);
+        }
+    }
+
+    private void OnItemDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if ((e.OriginalSource as DependencyObject) is { } source
+            && System.Windows.Controls.ItemsControl.ContainerFromElement(ItemList, source) is System.Windows.Controls.ListBoxItem { DataContext: ImportItem item })
+        {
+            OpenInViewer(item);
+        }
+    }
+
+    private async void OpenInViewer(ImportItem item)
+    {
+        if (!System.IO.File.Exists(item.SourcePath))
+        {
+            await _dialogs.ShowErrorAsync($"PDF が見つかりません。\n{item.SourcePath}", "PDF を開く");
+            return;
+        }
+        if (_viewer is null)
+        {
+            // 決定ログ ED-4: まだ登録していないので、閲覧の記録は残さない。続きの前後もない
+            _viewer = new ViewerWindow(_ => { }, _ => (null, null), _ => { }) { Owner = this };
+            _viewer.Closed += (_, _) => _viewer = null;
+        }
+        _viewer.Open([new ViewerDocument(item.SourcePath, item.DisplayName, item.DisplayName, item.SourcePath)]);
     }
 
     public int RegisteredCount => _viewModel.RegisteredCount;

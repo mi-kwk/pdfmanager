@@ -209,6 +209,19 @@ public static class SubLibraryPull
             }
             tags[t.Id] = id;
         }
+        // 決定ログ EC-9: 同じグループの中の親。この PC で親を決めていないタグだけ、サブに合わせる
+        foreach (var (child, parent) in Rows(main, transaction, "SELECT id, parent_tag_id FROM sub.tags WHERE parent_tag_id IS NOT NULL;", r => (r.GetInt64(0), r.GetInt64(1))))
+        {
+            if (tags.TryGetValue(child, out var c) && tags.TryGetValue(parent, out var p) && c != p)
+            {
+                added |= Execute(main, transaction, """
+                    UPDATE main.tags SET parent_tag_id = $p WHERE id = $c AND parent_tag_id IS NULL
+                      AND COALESCE(group_id, -1) = COALESCE((SELECT group_id FROM main.tags WHERE id = $p), -1)
+                      AND NOT EXISTS (WITH RECURSIVE up(id) AS (SELECT $p UNION SELECT t.parent_tag_id FROM main.tags t JOIN up ON t.id = up.id WHERE t.parent_tag_id IS NOT NULL)
+                                      SELECT 1 FROM up WHERE id = $c);
+                    """, ("$c", c), ("$p", p)) > 0;
+            }
+        }
         foreach (var (child, parent) in Rows(main, transaction, "SELECT child_id, parent_id FROM sub.tag_links;", r => (r.GetInt64(0), r.GetInt64(1))))
         {
             if (tags.TryGetValue(child, out var c) && tags.TryGetValue(parent, out var p) && c != p)
