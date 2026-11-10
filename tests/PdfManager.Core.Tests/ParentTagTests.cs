@@ -53,7 +53,8 @@ public sealed class ParentTagTests : IDisposable
 
         Assert.Equal(_whisky, Tag(_scotch).ParentTagId);
         Assert.Equal("ウィスキー", Tag(_scotch).ParentTagName);
-        Assert.Contains("親:ウィスキー", Tag(_scotch).DetailText);
+        Assert.Contains("大分類:ウィスキー", Tag(_scotch).DetailText);
+        Assert.Contains("小分類:スコッチ・ウイスキー", Tag(_whisky).DetailText);
         Assert.Contains("同じタググループ", Assert.Throws<CatalogException>(() => _catalog.SetTagParentTag(other, _whisky)).Message);
         Assert.Throws<CatalogException>(() => _catalog.SetTagParentTag(_whisky, _whisky));
         // 孫を親にすると輪になる

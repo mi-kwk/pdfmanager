@@ -19,6 +19,7 @@
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+        <conv:DepthIndentConverter x:Key="DepthIndent" />
         <Style x:Key="PaneBorder" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
@@ -44,8 +45,22 @@
             </DockPanel>
         </DataTemplate>
         <!-- タグ 1 行(名前、件数、グループ・紐づけ先) -->
+        <!-- 決定ログ FC-4: まだ保存していないときは、保存のボタンを目立つ色にする(Tag に「変更あり」を渡す) -->
+        <Style x:Key="SaveWhenDirty" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                    <Setter Property="Appearance" Value="Primary" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="DirtyNote" TargetType="ui:TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+        </Style>
+        <!-- 決定ログ FC-3: 小分類は大分類の下に字下げする -->
         <DataTemplate x:Key="TagItem">
-            <StackPanel Margin="0,2">
+            <StackPanel Margin="{Binding Depth, Converter={StaticResource DepthIndent}}">
                 <DockPanel>
                     <ui:TextBlock DockPanel.Dock="Right" Text="{Binding UsageCount, StringFormat={}{0:N0} 件}"
                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="12,0,0,0" />
@@ -225,21 +240,30 @@
                                                   Style="{StaticResource Hint}" Margin="0,0,0,20" />
 
                                     <ui:TextBlock Text="タググループ" Style="{StaticResource SectionTitle}" />
-                                    <DockPanel Margin="0,0,0,20">
-                                        <ui:Button DockPanel.Dock="Right" Content="グループを変更" Command="{Binding ChangeTagGroupCommand}" Margin="8,0,0,0" />
+                                    <DockPanel Margin="0,0,0,4">
+                                        <ui:Button DockPanel.Dock="Right" Content="グループを変更" Command="{Binding ChangeTagGroupCommand}" Margin="8,0,0,0"
+                                                   Style="{StaticResource SaveWhenDirty}" Tag="{Binding IsGroupDirty}" />
                                         <ComboBox ItemsSource="{Binding GroupChoices}" DisplayMemberPath="Label" SelectedItem="{Binding EditTagGroup}"
                                                   AutomationProperties.Name="タグのグループ" />
                                     </DockPanel>
+                                    <!-- 決定ログ FC-4: プルダウンで選んだだけで、まだ保存していないとき -->
+                                    <ui:TextBlock Text="まだ変更していません。「グループを変更」を押すと保存します。" Style="{StaticResource DirtyNote}"
+                                                  Visibility="{Binding IsGroupDirty, Converter={StaticResource BoolToVisibility}}" />
+                                    <Border Height="16" />
 
-                                    <!-- 決定ログ EC-5: 同じグループの中の親のタグ(サブカテゴリ) -->
-                                    <ui:TextBlock Text="親のタグ(同じグループの中のサブカテゴリ)" Style="{StaticResource SectionTitle}" />
+                                    <!-- 決定ログ EC-5・FC-1: 同じグループの中の大分類(画面では「大分類」「小分類」と呼ぶ) -->
+                                    <ui:TextBlock Text="大分類(同じグループの中で、このタグをまとめるタグ)" Style="{StaticResource SectionTitle}" />
                                     <DockPanel Margin="0,0,0,4">
-                                        <ui:Button DockPanel.Dock="Right" Content="親を変更" Command="{Binding ChangeTagParentCommand}" Margin="8,0,0,0"
-                                                   AutomationProperties.Name="親のタグを変更" />
+                                        <ui:Button DockPanel.Dock="Right" Content="大分類を変更" Command="{Binding ChangeTagParentCommand}" Margin="8,0,0,0"
+                                                   Style="{StaticResource SaveWhenDirty}" Tag="{Binding IsParentTagDirty}" AutomationProperties.Name="大分類を変更" />
                                         <ComboBox ItemsSource="{Binding ParentTagChoices}" DisplayMemberPath="Label" SelectedItem="{Binding EditParentTag}"
-                                                  AutomationProperties.Name="親のタグ" />
+                                                  AutomationProperties.Name="大分類" />
                                     </DockPanel>
-                                    <ui:TextBlock Text="このタグを付けると、親のタグ(その上の親も)にも自動でチェックが付きます。親のタグを外すと、このタグも外れます。登録や検索の画面では、親の下に字下げして並びます。"
+                                    <ui:TextBlock Text="まだ変更していません。「大分類を変更」を押すと保存します。" Style="{StaticResource DirtyNote}"
+                                                  Visibility="{Binding IsParentTagDirty, Converter={StaticResource BoolToVisibility}}" />
+                                    <!-- 決定ログ FC-2: このタグの下にある小分類 -->
+                                    <ui:TextBlock Text="{Binding ChildTagsText}" TextWrapping="Wrap" Margin="0,4,0,4" />
+                                    <ui:TextBlock Text="このタグを付けると、大分類(その上の大分類も)にも自動でチェックが付きます。大分類を外すと、その小分類も外れます。登録や検索の画面では、大分類の下に字下げして並びます。"
                                                   Style="{StaticResource Hint}" Margin="0,0,0,20" />
 
                                     <ui:TextBlock Text="紐づけ(1 つ上の順位のタグ)" Style="{StaticResource SectionTitle}" />

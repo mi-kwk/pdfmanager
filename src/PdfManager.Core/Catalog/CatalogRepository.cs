@@ -218,6 +218,10 @@ public sealed class CatalogRepository(SqliteConnection connection)
         var aliases = Query("SELECT tag_id, name FROM tag_aliases ORDER BY normalized_name;", r => (TagId: r.GetInt64(0), Name: r.GetString(1)))
             .ToLookup(x => x.TagId, x => x.Name);
 
+        // 決定ログ FC-2: すぐ下の小分類の名前
+        var children = Query("SELECT parent_tag_id, name FROM tags WHERE parent_tag_id IS NOT NULL ORDER BY normalized_name;",
+            r => (ParentId: r.GetInt64(0), Name: r.GetString(1))).ToLookup(x => x.ParentId, x => x.Name);
+
         return Query(
             """
             SELECT t.id, t.name, (SELECT COUNT(*) FROM document_tags d WHERE d.tag_id = t.id), t.group_id, g.name, t.parent_tag_id, pt.name
@@ -233,6 +237,7 @@ public sealed class CatalogRepository(SqliteConnection connection)
                 {
                     ParentTagId = r.IsDBNull(5) ? null : r.GetInt64(5),
                     ParentTagName = r.IsDBNull(6) ? null : r.GetString(6),
+                    ChildTagNames = children[r.GetInt64(0)].ToList(),
                 };
             });
     }
@@ -251,15 +256,15 @@ public sealed class CatalogRepository(SqliteConnection connection)
             }
             if (parentId == tagId)
             {
-                throw new CatalogException("自分自身は親にできません。");
+                throw new CatalogException("自分自身は大分類にできません。");
             }
             if (tag.GroupId != parent.GroupId)
             {
-                throw new CatalogException("親にできるのは、同じタググループのタグだけです。");
+                throw new CatalogException("大分類にできるのは、同じタググループのタグだけです。");
             }
             if (TagTree.Descendants(tagId, tags.ToDictionary(t => t.Key, t => t.Value.ParentTagId)).Contains(parentId))
             {
-                throw new CatalogException($"「{parent.Name}」は「{tag.Name}」の下にあるタグのため、親にできません。");
+                throw new CatalogException($"「{parent.Name}」は「{tag.Name}」の下にある小分類のため、大分類にできません。");
             }
         }
         Execute("UPDATE tags SET parent_tag_id = $parent WHERE id = $id;", ("$parent", (object?)parentTagId ?? DBNull.Value), ("$id", tagId));

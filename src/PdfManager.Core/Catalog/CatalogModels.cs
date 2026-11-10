@@ -90,11 +90,21 @@ public sealed record TagSummary(long Id, string Name, long UsageCount, long? Gro
 
     public string? ParentTagName { get; init; }
 
+    // 画面での呼び方は「大分類」(親)と「小分類」(子)(決定ログ FC-1)。このタグのすぐ下の小分類の名前(名前の順)
+    public IReadOnlyList<string> ChildTagNames { get; init; } = [];
+
+    // 一覧で上のタグの下に字下げするときの深さ(決定ログ FC-3。画面が並べるときに付ける)
+    public int Depth { get; init; }
+
+    // 名前で絞り込んだ一覧などで出す「ウィスキー › スコッチ・ウイスキー」(決定ログ FC-3。画面が付ける)
+    public string? Path { get; init; }
+
     public bool HasParents => ParentNames.Count > 0;
 
     // 一覧などの 2 行目:「分類２ ・ 漫画、雑誌」
     public string DetailText => (ParentNames.Count == 0 ? GroupLabel : $"{GroupLabel} ・ {string.Join("、", ParentNames)}")
-        + (ParentTagName is { } parent ? $" ・ 親:{parent}" : "")
+        + (Path is { } path ? $" ・ {path}" : ParentTagName is { } parent ? $" ・ 大分類:{parent}" : "")
+        + (ChildTagNames.Count == 0 ? "" : $" ・ 小分類:{ChildTagNames[0]}" + (ChildTagNames.Count > 1 ? $" ほか {ChildTagNames.Count - 1} 個" : ""))
         + (AliasNames.Count == 0 ? "" : $" ・ 別名:{AliasText}");
 }
 

@@ -268,7 +268,7 @@ public partial class ManageViewModel : ObservableObject
     public partial GroupChoice TagGroupFilter { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsTagSelected))]
+    [NotifyPropertyChangedFor(nameof(IsTagSelected), nameof(IsParentTagDirty), nameof(IsGroupDirty), nameof(ChildTagsText))]
     public partial TagSummary? SelectedTag { get; set; }
 
     [ObservableProperty]
@@ -317,7 +317,20 @@ public partial class ManageViewModel : ObservableObject
     public partial IReadOnlyList<ParentTagChoice> ParentTagChoices { get; set; } = [];
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsParentTagDirty))]
     public partial ParentTagChoice? EditParentTag { get; set; }
+
+    // 決定ログ FC-4: プルダウンで選んだだけで、まだ保存していない
+    public bool IsParentTagDirty => SelectedTag is { } tag && EditParentTag is { } choice && choice.Id != tag.ParentTagId;
+
+    public bool IsGroupDirty => SelectedTag is { } tag && EditTagGroup is { } group && group.Id != tag.GroupId;
+
+    partial void OnEditTagGroupChanged(GroupChoice? value) => OnPropertyChanged(nameof(IsGroupDirty));
+
+    // 決定ログ FC-2: このタグの下にある小分類
+    public string ChildTagsText => SelectedTag is not { } tag ? ""
+        : tag.ChildTagNames.Count == 0 ? "このタグの小分類はありません。"
+        : $"このタグの小分類:{string.Join("、", tag.ChildTagNames)}";
 
     // 選んだタグの親にできるもの:同じグループのタグのうち、自分と自分の子孫以外(「ウィスキー › スコッチ」の形で出す)
     private void BuildParentTagChoices()
@@ -379,11 +392,11 @@ public partial class ManageViewModel : ObservableObject
         var skippedText = skipped > 0 ? $"\n(つながっていないサブライブラリにある {skipped:N0} 件は、今は付けられません)" : "";
         if (available.Count == 0)
         {
-            await _dialogs.ShowErrorAsync($"「{tag.Name}」が付いていて、親のタグが付いていない PDF が {missing.Count:N0} 件ありますが、すべてつながっていないサブライブラリにあるため、今は付けられません。", "親のタグ");
+            await _dialogs.ShowErrorAsync($"「{tag.Name}」が付いていて、大分類が付いていない PDF が {missing.Count:N0} 件ありますが、すべてつながっていないサブライブラリにあるため、今は付けられません。", "大分類");
             return;
         }
-        if (await _dialogs.ConfirmAsync("親のタグ",
-                $"「{tag.Name}」(またはその下のタグ)が付いている PDF のうち {available.Count:N0} 件には、親のタグ「{parentLabel}」が付いていません。付けますか?{skippedText}", "付ける"))
+        if (await _dialogs.ConfirmAsync("大分類",
+                $"「{tag.Name}」(またはその小分類)が付いている PDF のうち {available.Count:N0} 件には、大分類「{parentLabel}」が付いていません。付けますか?{skippedText}", "付ける"))
         {
             await RunAsync(c => c.AddMissingAncestors(available, DateTimeOffset.UtcNow));
         }
@@ -696,11 +709,30 @@ public partial class ManageViewModel : ObservableObject
     private void ApplyTagFilter(long? selectTagId)
     {
         var filter = NameNormalizer.Normalize(TagFilter);
-        VisibleTags = _allTags
+        var matched = _allTags
             .Where(t => TagGroupFilter is null || TagGroupFilter == AllGroups || t.GroupId == TagGroupFilter.Id)
             .Where(t => filter.Length == 0 || NameNormalizer.Normalize(t.Name).Contains(filter, StringComparison.Ordinal)
                 || t.AliasNames.Any(a => NameNormalizer.Normalize(a).Contains(filter, StringComparison.Ordinal)))
             .ToList();
+        // 決定ログ FC-3: 小分類は大分類のすぐ下に字下げして並べる(同じ階層は名前の順)。名前で絞り込んでいるときは字下げせず道すじを出す
+        if (filter.Length == 0)
+        {
+            var position = matched.Select((t, i) => (t.Id, i)).ToDictionary(x => x.Id, x => x.i);
+            VisibleTags = TagTree.Order(matched, t => t.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    t => t.ParentTagId?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    Comparer<TagSummary>.Create((a, b) => position[a.Id].CompareTo(position[b.Id])))
+                .Select(x => x.Item with { Depth = x.Depth, Path = null })
+                .ToList();
+        }
+        else
+        {
+            var parents = _allTags.ToDictionary(t => t.Id, t => t.ParentTagId);
+            var names = _allTags.ToDictionary(t => t.Id, t => t.Name);
+            VisibleTags = matched.Select(t => TagTree.Ancestors(t.Id, parents) is { Count: > 0 } ancestors
+                    ? t with { Depth = 0, Path = TagTree.Path(ancestors.Select(id => names[id]), t.Name) }
+                    : t with { Depth = 0, Path = null })
+                .ToList();
+        }
         SelectedTag = VisibleTags.FirstOrDefault(t => t.Id == selectTagId);
     }
 }
