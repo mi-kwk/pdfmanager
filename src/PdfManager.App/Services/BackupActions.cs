@@ -10,15 +10,36 @@ namespace PdfManager.App.Services;
 // バックアップの操作(決定ログ BB-1〜BB-7)。設定画面と、起動時のお知らせから使う
 public static class BackupActions
 {
-    // 保存先を選ぶ。選ばなければ null
-    public static string? ChooseFolder(Window owner, string? current)
+    // 決定ログ BB-2 の補足(2026-11-10):Windows のフォルダーの選択の画面では、「PC」でドライブを選んだだけだと
+    // 「フォルダーの選択」が押せないことがあるため、題名で手順を伝える
+    public const string DriveRootHint = "ドライブの直下に置くときは、ドライブを開いてから何も選ばずに「フォルダーの選択」を押してください";
+
+    // 保存先を選ぶ。実際にできる場所(「PdfManager-backup」フォルダ)を見せて確かめる。選ばなければ null
+    public static async Task<string?> ChooseFolderAsync(Window owner, string? current)
     {
-        var dialog = new OpenFolderDialog { Title = "バックアップの保存先を選択(外付け HDD など)" };
+        var dialog = new OpenFolderDialog { Title = $"バックアップの保存先を選択(外付け HDD など。{DriveRootHint})" };
         if (current is not null && Directory.Exists(current))
         {
             dialog.InitialDirectory = current;
         }
-        return dialog.ShowDialog(owner) == true ? dialog.FolderName : null;
+        if (dialog.ShowDialog(owner) != true)
+        {
+            return null;
+        }
+        var folder = dialog.FolderName;
+        // 「PdfManager-backup」そのものを選んだときは、その親を保存先にする(中にもう 1 つ作らないように)
+        if (string.Equals(Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)), BackupService.RootFolderName, StringComparison.OrdinalIgnoreCase)
+            && Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder)) is { } parent)
+        {
+            folder = parent;
+        }
+        var target = Path.Combine(folder, BackupService.RootFolderName);
+        var exists = Directory.Exists(target) ? "\n(この場所にはバックアップがあります。続きから、増えた分だけコピーします)" : "\n(このフォルダは、初めてバックアップするときに作ります)";
+        return await new WpfUiDialogs(owner).ConfirmAsync("バックアップの保存先",
+                $"次の場所に保存します。\n\n{target}{exists}\n\nこの場所でよいですか?\n(別の場所にするときは「キャンセル」を押して、選び直してください)",
+                "この場所にする")
+            ? folder
+            : null;
     }
 
     // 今すぐバックアップ。保存先がなければ選んでもらう。終わったら結果を表示し、PC の設定に記録する
@@ -33,7 +54,7 @@ public static class BackupActions
             {
                 await dialogs.ShowErrorAsync($"バックアップの保存先が見つかりません。外付け HDD などをつないでいるか確かめてください。\n{folder}\n\n別の保存先を選ぶこともできます。", "バックアップ");
             }
-            folder = ChooseFolder(owner, folder);
+            folder = await ChooseFolderAsync(owner, folder);
             if (folder is null)
             {
                 return;

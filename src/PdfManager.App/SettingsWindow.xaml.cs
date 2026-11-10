@@ -246,7 +246,7 @@ public partial class SettingsWindow : FluentWindow
 
     private async void OnChooseBackupFolderClick(object sender, RoutedEventArgs e)
     {
-        if (BackupActions.ChooseFolder(this, _libraries.Backup.Folder) is not { } folder)
+        if (await BackupActions.ChooseFolderAsync(this, _libraries.Backup.Folder) is not { } folder)
         {
             return;
         }
@@ -278,7 +278,7 @@ public partial class SettingsWindow : FluentWindow
     // 決定ログ BB-7: バックアップのあるフォルダを選び、どの回をどこへ戻すかを選ぶ。戻したら、開くかを聞く
     private async void OnRestoreClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "バックアップのあるフォルダを選択(バックアップの保存先)" };
+        var dialog = new OpenFolderDialog { Title = $"バックアップのあるフォルダを選択(バックアップの保存先。{BackupActions.DriveRootHint})" };
         if (_libraries.Backup.Folder is { } folder && Directory.Exists(folder))
         {
             dialog.InitialDirectory = folder;
