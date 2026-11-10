@@ -73,6 +73,13 @@ public partial class TagItemSection(TagGroup group, IReadOnlyList<TagFilterItem>
 
     public bool HasItems => Items.Count > 0;
 
+    // 決定ログ GB-4: どの PDF にも付いていないため隠したタグの数
+    public int HiddenCount { get; init; }
+
+    public string HiddenText => HiddenCount > 0 ? $"PDF のないタグ {HiddenCount} 個は隠しています(整理は「項目・タグ」で行えます)。" : "";
+
+    public bool HasHidden => HiddenCount > 0;
+
     // 決定ログ FB-1: この項目のタグで絞っている(含む・除外)
     public bool IsSet => Items.Any(i => i.State != TagFilterState.None);
 

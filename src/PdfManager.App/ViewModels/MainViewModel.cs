@@ -123,6 +123,7 @@ public partial class MainViewModel : ObservableObject
         _dialogs = dialogs;
         _saveView = saveView;
         Editor = new DocumentEditor(dialogs, showRatingAndMemo: true, showTagSections: false);
+        Editor.Copied += what => ShowListMessage("コピー", $"{what}をコピーしました。");
         Editor.Edited += () =>
         {
             HasChanges = true;
@@ -207,16 +208,18 @@ public partial class MainViewModel : ObservableObject
     {
         var search = DocumentSearchIndex.Normalize(OtherTagSearch.Trim());
         var pinned = ItemSections.Select(s => s.Group.Id).ToHashSet();
+        var hidden = 0;
         OtherTags = search.Length == 0
             ? TagFilters.Where(t => t.State != TagFilterState.None && (t.Tag.GroupId is not { } g || !pinned.Contains(g))).ToList()
-            : TagFilters
+            : WithoutUnused(TagFilters
                 .Where(t => t.State != TagFilterState.None
                             || TagItemSection.Matches(t.Tag, search)
-                            || DocumentSearchIndex.Normalize(t.Tag.GroupLabel).Contains(search, StringComparison.Ordinal))
-                .ToList();
+                            || DocumentSearchIndex.Normalize(t.Tag.GroupLabel).Contains(search, StringComparison.Ordinal)), out hidden);
+        // 決定ログ GB-4: どの PDF にも付いていないタグを隠したときは知らせる
+        var hiddenText = hidden > 0 ? $"PDF のないタグ {hidden} 個は隠しています。" : "";
         OtherTagHint = search.Length == 0
             ? "項目にないタグは、タグ名・グループ名で検索して絞り込めます。"
-            : OtherTags.Count == 0 ? "見つかりません。" : "";
+            : OtherTags.Count == 0 ? "見つかりません。" + hiddenText : hiddenText;
     }
 
     [ObservableProperty]
@@ -1139,9 +1142,28 @@ public partial class MainViewModel : ObservableObject
         // 決定ログ Q-14: 項目(左に常に表示するタググループ)
         var searches = ItemSections.ToDictionary(s => s.Group.Id, s => s.Search);
         ItemSections = groups.Where(g => g.IsPinned).OrderBy(g => g.PinOrder).ThenBy(g => g.Id)
-            .Select(g => new TagItemSection(g, InTreeOrder(TagFilters.Where(t => t.Tag.GroupId == g.Id))) { Search = searches.GetValueOrDefault(g.Id, "") })
+            .Select(g =>
+            {
+                var items = WithoutUnused(TagFilters.Where(t => t.Tag.GroupId == g.Id), out var hidden);
+                return new TagItemSection(g, InTreeOrder(items)) { Search = searches.GetValueOrDefault(g.Id, ""), HiddenCount = hidden };
+            })
             .ToList();
         UpdateOtherTags();
+    }
+
+    // 決定ログ GB-1〜GB-3: どの PDF にも付いていないタグは出さない。含む・除外にしているタグと、出すタグの大分類は残す
+    private static List<TagFilterItem> WithoutUnused(IEnumerable<TagFilterItem> items, out int hidden)
+    {
+        var list = items.ToList();
+        var parents = list.ToDictionary(i => i.Tag.Id, i => i.Tag.ParentTagId);
+        var keep = list.Where(i => i.Tag.UsageCount > 0 || i.State != TagFilterState.None).Select(i => i.Tag.Id).ToHashSet();
+        foreach (var id in keep.ToList())
+        {
+            keep.UnionWith(Core.Catalog.TagTree.Ancestors(id, parents));
+        }
+        var kept = list.Where(i => keep.Contains(i.Tag.Id)).ToList();
+        hidden = list.Count - kept.Count;
+        return kept;
     }
 
     // 決定ログ EC-4: 子のタグを親のすぐ下に並べ、字下げの深さを付ける(同じ親の中は名前の順)

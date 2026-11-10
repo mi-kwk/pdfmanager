@@ -76,6 +76,11 @@ public partial class DocumentEditor : ObservableObject
     // 詳細エリアの「タグ設定」が押されたとき
     public event Action? TagSettingRequested;
 
+    // 決定ログ GA-4: コピーしたとき(何をコピーしたか)。メイン画面は一覧の上に「コピーしました」と出す
+    public event Action<string>? Copied;
+
+    public void NotifyCopied(string what) => Copied?.Invoke(what);
+
     public bool ShowRatingAndMemo { get; }
 
     public IReadOnlyList<EditableDocument> Targets => _targets;

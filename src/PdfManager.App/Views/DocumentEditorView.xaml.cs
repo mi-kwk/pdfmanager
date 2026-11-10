@@ -60,6 +60,24 @@ public partial class DocumentEditorView : UserControl
         TitleBox.CaretIndex = TitleBox.Text.Length;
     }
 
+    // 決定ログ GA-2・GA-4: タイトル全体をコピーし、「コピーしました」を出してもらう
+    private void OnCopyTitleClick(object sender, RoutedEventArgs e)
+    {
+        if (Editor is not { } editor || string.IsNullOrEmpty(editor.EditorTitle))
+        {
+            return;
+        }
+        try
+        {
+            Clipboard.SetText(editor.EditorTitle);
+            editor.NotifyCopied("タイトル");
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // ほかのアプリがクリップボードを使っていて書けなかった(もう一度押せばよい)
+        }
+    }
+
     private void OnShowAllTitlesClick(object sender, RoutedEventArgs e)
     {
         if (Editor is { } editor)

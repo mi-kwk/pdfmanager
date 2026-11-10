@@ -521,6 +521,9 @@
                                                           Visibility="{Binding HasItems, Converter={StaticResource InverseBoolToVisibility}}" />
                                             <ItemsControl ItemsSource="{Binding VisibleItems}" ItemTemplate="{StaticResource PinnedTagFilterTemplate}"
                                                           AutomationProperties.Name="{Binding Group.Name}" />
+                                            <!-- 決定ログ GB-4 -->
+                                            <ui:TextBlock Text="{Binding HiddenText}" Style="{StaticResource SecondaryText}" FontSize="12" Margin="0,4,0,0"
+                                                          Visibility="{Binding HasHidden, Converter={StaticResource BoolToVisibility}}" />
                                         </StackPanel>
                                     </Expander>
                                 </DataTemplate>

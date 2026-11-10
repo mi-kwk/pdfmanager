@@ -23,6 +23,24 @@
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="FontSize" Value="12" />
         </Style>
+        <!-- 決定ログ GA-1・GA-3: 見た目は文字のまま、選んでコピーできる(Ctrl+C・右クリックの「コピー」) -->
+        <Style x:Key="SelectableText" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="Warning" TargetType="ui:TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
             <Setter Property="TextWrapping" Value="Wrap" />
@@ -38,7 +56,11 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
+            <!-- 決定ログ GA-2: タイトル全体をコピー -->
+            <ui:Button Grid.Column="2" Margin="4,0,0,0" Padding="8,6" Icon="{ui:SymbolIcon Copy24}" Click="OnCopyTitleClick"
+                       AutomationProperties.Name="タイトルをコピー" ToolTip="タイトルをコピー" />
             <ui:TextBox x:Name="TitleBox" Grid.Column="0" Text="{Binding EditorTitle, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="タイトル"
                         PreviewKeyDown="OnTitleKeyDown" LostKeyboardFocus="OnTitleLostFocus" />
             <ui:Button Grid.Column="1" Margin="4,0,0,0" Padding="8,6" Icon="{ui:SymbolIcon ChevronDown24}" Click="OnShowAllTitlesClick"
@@ -98,7 +120,8 @@
             <ui:TextBox Grid.Column="2" Text="{Binding EditorSuffix, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{Binding SuffixPlaceholder}" AutomationProperties.Name="ファイル名の自由入力" />
         </Grid>
-        <ui:TextBlock Text="{Binding FileNamePreview}" TextWrapping="Wrap" Margin="0,6,0,0" />
+        <TextBox Text="{Binding FileNamePreview, Mode=OneWay}" Style="{StaticResource SelectableText}" Margin="0,6,0,0"
+                 AutomationProperties.Name="ファイル名のプレビュー" />
         <ui:TextBlock Text="{Binding FileNameWarning}" Style="{StaticResource Warning}" />
         <ui:Button Content="タグから作り直す" Icon="{ui:SymbolIcon ArrowSync24}" Margin="0,6,0,0"
                    Command="{Binding RebuildFileNameCommand}"
@@ -196,7 +219,8 @@
                             </Grid.ColumnDefinitions>
                             <ui:TextBlock Text="{Binding GroupName}" TextTrimming="CharacterEllipsis"
                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            <ui:TextBlock Grid.Column="1" Text="{Binding TagsText}" TextWrapping="Wrap" />
+                            <TextBox Grid.Column="1" Text="{Binding TagsText, Mode=OneWay}" Style="{StaticResource SelectableText}"
+                                     AutomationProperties.Name="{Binding GroupName, StringFormat={}{0}のタグ}" />
                         </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
