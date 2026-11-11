@@ -19,10 +19,20 @@ public partial class WelcomeWindow : FluentWindow
         _libraries = libraries;
         _dialogs = new WpfUiDialogs(this);
         SystemThemeWatcher.Watch(this);
+        AppVersionText.Text = $"バージョン {AppUpdater.CurrentVersionText}";
         RefreshRecent();
     }
 
     public LibraryInfo? SelectedLibrary { get; private set; }
+
+    // 決定ログ HA-1: 差し替えたら閉じる(アプリが終わるときに新しいバージョンで起動し直す)
+    private async void OnUpdateClick(object sender, RoutedEventArgs e)
+    {
+        if (await AppUpdater.RunAsync(this, _libraries, storage: null))
+        {
+            Close();
+        }
+    }
 
     private void OnCreateClick(object sender, RoutedEventArgs e) => Finish(_libraries.Create(this));
 

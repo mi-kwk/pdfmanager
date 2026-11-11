@@ -71,6 +71,23 @@ public sealed class ExportTests : IDisposable
         Assert.StartsWith("\"説明書, B\",説明書 (2).pdf,", lines[2]);
     }
 
+    // 決定ログ HA-8: この PdfManager の exe も一緒に入れる(フォルダでも ZIP でも、いちばん上に)
+    [Fact]
+    public void IncludeExe_PutsExeAtTopOfFolderAndZip()
+    {
+        AddDocument("a1", "a.pdf", "A", _iodata);
+        var exe = Path.Combine(Folder("app"), "PdfManager.exe");
+        File.WriteAllText(exe, "exe body");
+
+        var folder = Export(["a1"], new ExportOptions(Handoff: true, IncludeExePath: exe));
+        var zip = Export(["a1"], new ExportOptions(Zip: true, IncludeExePath: exe));
+
+        Assert.Equal("exe body", File.ReadAllText(Path.Combine(folder.OutputPath, "PdfManager.exe")));
+        using var archive = ZipFile.OpenRead(zip.OutputPath);
+        Assert.Contains("PdfManager.exe", archive.Entries.Select(e => e.FullName));
+        Assert.True(ExportService.Plan(_storage, ["a1"], _usb, includeExePath: exe).Bytes > ExportService.Plan(_storage, ["a1"], _usb).Bytes);
+    }
+
     [Fact]
     public void Folder_SplitsByTagGroup()
     {

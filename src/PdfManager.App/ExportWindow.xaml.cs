@@ -42,6 +42,11 @@ public partial class ExportWindow : FluentWindow
             .ToList();
         SplitBox.SelectedIndex = 0;
         FolderBox.Text = lastFolder ?? "";
+        // 決定ログ HA-8: 初めはオフ。開発用の実行(exe 1 つで動かないもの)では入れられない
+        IncludeExeCheck.IsEnabled = AppUpdater.StandaloneExePath is not null;
+        IncludeExeNote.Text = AppUpdater.StandaloneExePath is not null
+            ? $"バージョン {AppUpdater.CurrentVersionText}(約 {new FileInfo(AppUpdater.StandaloneExePath).Length >> 20:N0} MB)。相手の PC では、設定画面の「新しいバージョンに更新」でこの exe を選ぶと更新できます。"
+            : "開発用の実行のため、入れられません。";
     }
 
     public IReadOnlyList<string> DocumentIds { get; private set; } = [];
@@ -80,7 +85,8 @@ public partial class ExportWindow : FluentWindow
         }
         Folder = folder;
         Options = new ExportOptions(ZipFormat.IsChecked == true, ListCheck.IsChecked == true,
-            handoff ? null : (SplitBox.SelectedItem as ExportSplitChoice)?.GroupId, Handoff: handoff);
+            handoff ? null : (SplitBox.SelectedItem as ExportSplitChoice)?.GroupId, Handoff: handoff,
+            IncludeExePath: IncludeExeCheck.IsChecked == true ? AppUpdater.StandaloneExePath : null);
         DialogResult = true;
     }
 

@@ -39,11 +39,18 @@
                 <ui:TextBlock Text="最近使ったライブラリ" FontTypography="BodyStrong" Margin="0,0,0,8" />
             </StackPanel>
 
-            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                <ui:Button Content="一覧から削除" Icon="{ui:SymbolIcon Dismiss24}" Click="OnForgetClick" Margin="0,0,8,0" />
-                <ui:Button Content="開く" Appearance="Primary" Icon="{ui:SymbolIcon FolderOpen24}" Click="OnOpenRecentClick"
+            <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                <ui:Button DockPanel.Dock="Right" Content="開く" Appearance="Primary" Icon="{ui:SymbolIcon FolderOpen24}" Click="OnOpenRecentClick"
                            AutomationProperties.Name="選んだライブラリを開く" />
-            </StackPanel>
+                <ui:Button DockPanel.Dock="Right" Content="一覧から削除" Icon="{ui:SymbolIcon Dismiss24}" Click="OnForgetClick" Margin="0,0,8,0" />
+                <!-- 決定ログ HA-1・HA-7: ライブラリが新しいバージョンで使われていて開けないときも、ここから更新できる -->
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="新しいバージョンに更新" Icon="{ui:SymbolIcon ArrowUp24}" Click="OnUpdateClick" Appearance="Transparent"
+                               AutomationProperties.Name="新しいバージョンに更新" />
+                    <ui:TextBlock x:Name="AppVersionText" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"
+                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </DockPanel>
 
             <Grid>
                 <ui:TextBlock x:Name="NoRecentText" Text="まだありません" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />

@@ -151,7 +151,7 @@ public static class LibraryService
         var isSub = file.Kind == SubKind;
         if (file.FormatVersion > (isSub ? SubFormatVersion : FormatVersion))
         {
-            throw new LibraryException("新しいバージョンの PdfManager で作られたライブラリです。アプリを新しいバージョンにしてから開いてください。");
+            throw new LibraryException(NewerAppMessage("このライブラリ", null));
         }
         return (new LibraryInfo(path, file.Id, file.Name, isSub ? LibraryKind.Sub : LibraryKind.Main, file.MainId), file.CreatedAt);
     }
@@ -165,12 +165,24 @@ public static class LibraryService
 
         info.DataFolder.EnsureCreated();
         using var connection = PdfManagerDatabase.Open(info.DataFolder.DatabasePath);
-        if (PdfManagerDatabase.GetUserVersion(connection) > PdfManagerDatabase.SchemaVersion)
+        var version = PdfManagerDatabase.GetUserVersion(connection);
+        if (version > PdfManagerDatabase.SchemaVersion)
         {
-            throw new LibraryException("新しいバージョンの PdfManager で作られたライブラリです。アプリを新しいバージョンにしてから開いてください。");
+            throw new LibraryException(NewerAppMessage("このライブラリ", PdfManagerDatabase.ReadSchemaAppVersion(connection)));
+        }
+        // 決定ログ HA-4: 新しいバージョンで初めて開き、データベースの形が変わるときは、変える前の控えを取る
+        if (version > 0 && version < PdfManagerDatabase.SchemaVersion)
+        {
+            PdfManagerDatabase.SaveBeforeUpgrade(connection, info.DataFolder.DatabasePath, version);
         }
         PdfManagerDatabase.Initialize(connection, useWal);
     }
+
+    // 決定ログ HA-7: 古い PdfManager で開かれたとき。必要なバージョンがわかれば出す
+    public static string NewerAppMessage(string what, string? requiredVersion) => requiredVersion is null
+        ? $"{what}は新しいバージョンの PdfManager で使われています。PdfManager.exe を新しいバージョンに更新してから開いてください。"
+        : $"{what}はバージョン {requiredVersion} 以降の PdfManager で使われています。PdfManager.exe をバージョン {requiredVersion} 以降に更新してから開いてください。"
+          + (PdfManagerDatabase.AppVersion is { } current ? $"\n(この PdfManager のバージョン:{current})" : "");
 
     public static bool IsSameOrUnder(string path, string folder)
     {

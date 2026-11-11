@@ -162,6 +162,23 @@ public sealed class LibraryActions(AppSettingsStore store)
         store.Save(Settings);
     }
 
+    // 決定ログ HA-6: 前回起動したバージョンと比べ、上がっていれば「更新しました」の文を返す(今のバージョンを記録する)
+    public string? CheckUpdated(string currentVersionText, bool afterUpdate)
+    {
+        var previous = Settings.LastRunVersion;
+        if (previous != currentVersionText)
+        {
+            Settings = Settings with { LastRunVersion = currentVersionText };
+            store.Save(Settings);
+        }
+        var current = Core.Update.ExeUpdater.ParseVersion(currentVersionText);
+        var before = Core.Update.ExeUpdater.ParseVersion(previous);
+        var updated = current is not null && (before is null ? afterUpdate : current > before);
+        return updated
+            ? $"バージョン {currentVersionText} に更新しました。" + (previous is not null && before < current ? $"(前のバージョン:{previous})" : "")
+            : null;
+    }
+
     public void Forget(string libraryFilePath)
     {
         Settings = AppSettingsStore.Forget(Settings, libraryFilePath);

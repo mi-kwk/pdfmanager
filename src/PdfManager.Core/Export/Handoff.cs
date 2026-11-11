@@ -23,7 +23,9 @@ public sealed record HandoffManifest(
     IReadOnlyList<HandoffTag> Tags,
     IReadOnlyList<HandoffField> Fields,
     IReadOnlyList<HandoffDocument> Documents,
-    IReadOnlyList<HandoffLink> Links);
+    IReadOnlyList<HandoffLink> Links,
+    // 決定ログ HA-7: 書き出したアプリのバージョン
+    string? AppVersion = null);
 
 public sealed record HandoffGroup(string Name, int Rank, bool IsPinned, int PinOrder, int SortOrder);
 
@@ -165,7 +167,7 @@ public static class HandoffFormat
         var docLinks = Rows(connection, "SELECT from_id, to_id, type FROM document_links;", null, r => new HandoffLink(r.GetString(0), r.GetString(1), r.GetString(2)))
             .Where(l => ids.Contains(l.From) && ids.Contains(l.To)).ToList();
 
-        return new HandoffManifest(Name, Version, library.Id.ToString("D"), library.Name, pc, now, groups, tagsOut, fields, documents, docLinks);
+        return new HandoffManifest(Name, Version, library.Id.ToString("D"), library.Name, pc, now, groups, tagsOut, fields, documents, docLinks, PdfManagerDatabase.AppVersion);
     }
 
     private static HandoffDocument Read(object[] row, string id, string file, IReadOnlyList<string> tags, IReadOnlyList<HandoffFieldValue> values, IReadOnlyList<HandoffPageText> texts) =>
@@ -220,7 +222,9 @@ public static class HandoffFormat
         }
         if (manifest.Version > Version)
         {
-            throw new LibraryException("新しいバージョンの PdfManager で作った受け渡しです。この PdfManager では取り込めません。");
+            throw new LibraryException(manifest.AppVersion is { } required
+                ? $"バージョン {required} の PdfManager で作った受け渡しです。この PdfManager では取り込めません。PdfManager.exe をバージョン {required} 以降に更新してから取り込んでください。"
+                : "新しいバージョンの PdfManager で作った受け渡しです。この PdfManager では取り込めません。PdfManager.exe を新しいバージョンに更新してから取り込んでください。");
         }
         return manifest;
     }

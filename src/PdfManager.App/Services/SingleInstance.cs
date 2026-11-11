@@ -42,6 +42,7 @@ public static class SingleInstance
         }
 
         // 決定ログ BD-2: 画面のない PdfManager が残っている(前に閉じたときに終わりきらなかったものなど)
+        LifecycleLog.Write($"画面のない PdfManager が {others.Count} 個あります:{string.Join("、", others.Select(p => p.Id))}。終了するか確認します");
         if (!await dialogs.ConfirmAsync("PdfManager が残っています",
                 $"画面の表示されていない PdfManager が {others.Count} 個動いています(前に閉じたときに終わりきらなかった可能性があります)。\n" +
                 "これを終了してから起動しますか?\n\nexe を新しいものに置き換えられないときも、これが原因です。",
@@ -54,11 +55,13 @@ public static class SingleInstance
             try
             {
                 process.Kill();
-                process.WaitForExit(5000);
+                var exited = process.WaitForExit(5000);
+                LifecycleLog.Write($"残っていた PdfManager [{process.Id}] を終了しました:{(exited ? "終わりました" : "5 秒たっても終わりません")}");
             }
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
                 // すでに終わっていた、または終了できなかった。起動は続ける
+                LifecycleLog.Write($"残っていた PdfManager を終了できませんでした:{ex.Message}");
             }
         }
         return true;

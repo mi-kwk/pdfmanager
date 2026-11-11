@@ -74,6 +74,7 @@ public partial class MainWindow : FluentWindow
         // 決定ログ BB-5: 前回のバックアップから日数がたっていたら知らせる(画面が出てから)
         ContentRendered += async (_, _) =>
         {
+            Services.LifecycleLog.Write($"メイン画面を表示しました(PDF {_viewModel.DocumentCount:N0} 件)");
             _storage.NotifyPulled();
             await AskPendingPullsAsync();
             await BackupActions.RemindIfDueAsync(this, _libraries, _storage, (int)_viewModel.DocumentCount);
@@ -82,6 +83,8 @@ public partial class MainWindow : FluentWindow
         // ライブラリを切り替えたときや終了したときは、ビューアも閉じる(決定ログ K-6)
         Closed += (_, _) =>
         {
+            Services.LifecycleLog.Write("メイン画面が閉じました。開いている画面:"
+                + string.Join("、", Application.Current.Windows.Cast<Window>().Where(w => w != this).Select(w => $"{w.GetType().Name}({(w.IsVisible ? "表示" : "非表示")})")));
             // 決定ログ BD-3: アプリを終えるとき(ライブラリの切り替えではないとき)は、後片付けの前に見張りを始める。
             // 閉じるときには WPF がメイン画面の登録を先に外していることがあるため、「別のメイン画面に切り替わった」ときだけ除く
             if (Application.Current.MainWindow is not MainWindow other || other == this)
@@ -99,6 +102,7 @@ public partial class MainWindow : FluentWindow
             _viewer?.Close();
             _duplicateCheck?.Close();
             _analytics?.Close();
+            Services.LifecycleLog.Write("メイン画面の後片付けが終わりました");
         };
     }
 
@@ -913,7 +917,7 @@ public partial class MainWindow : FluentWindow
         var dialogs = new WpfUiDialogs(this);
         var (ids, folder, options) = (window.DocumentIds, window.Folder, window.Options);
         var startedAt = DateTimeOffset.Now;
-        var plan = await _storage.RunAsync(s => Core.Export.ExportService.Plan(s, ids, folder, options.Handoff));
+        var plan = await _storage.RunAsync(s => Core.Export.ExportService.Plan(s, ids, folder, options.Handoff, options.IncludeExePath));
         if (plan.Count == 0)
         {
             await dialogs.ShowErrorAsync("出せる PDF がありません(保存先のサブライブラリがつながっていません)。", "USB へ出力");
@@ -949,7 +953,9 @@ public partial class MainWindow : FluentWindow
             _libraries.SetLastHandoff(_library.Id, startedAt);
         }
         // 決定ログ CC-8: 出せなかったものは理由と一緒に知らせる
-        var message = $"{result.Exported:N0} 件を出力しました。" + (options.Handoff ? "ほかの PC で「取り込み」の「受け渡しを取り込む」で取り込めます。" : "") + $"\n{result.OutputPath}"
+        var message = $"{result.Exported:N0} 件を出力しました。" + (options.Handoff ? "ほかの PC で「取り込み」の「受け渡しを取り込む」で取り込めます。" : "")
+            + (options.IncludeExePath is not null ?$"\nPdfManager.exe(バージョン {AppUpdater.CurrentVersionText})も入れました。ほかの PC では、設定画面の「新しいバージョンに更新」で選ぶと更新できます。" : "")
+            + $"\n{result.OutputPath}"
             + (result.Skipped.Count > 0 ? $"\n\n次の {result.Skipped.Count:N0} 件は出せませんでした。\n" + string.Join("\n", result.Skipped.Take(5)) + (result.Skipped.Count > 5 ? $"\nほか {result.Skipped.Count - 5:N0} 件" : "") : "");
         if (await dialogs.ConfirmAsync("USB へ出力しました", message, "エクスプローラーで開く"))
         {
@@ -979,6 +985,12 @@ public partial class MainWindow : FluentWindow
         var settings = new SettingsWindow(_library, _libraries, _storage) { Owner = this };
         settings.ShowDialog();
         _viewModel.RecordUsage = _libraries.RecordUsage;
+        // 決定ログ HA-1: exe を差し替えたら閉じる(終わるときに新しいバージョンで起動し直す)
+        if (settings.Updated)
+        {
+            Close();
+            return;
+        }
         if (settings.SelectedLibrary is { } library)
         {
             App.CurrentApp.SwitchLibrary(library);
@@ -990,6 +1002,9 @@ public partial class MainWindow : FluentWindow
             OpenArchive();
         }
     }
+
+    // 一覧の上のお知らせ(決定ログ HA-6 の「更新しました」など)
+    public void ShowNotice(string title, string message) => _viewModel.ShowListMessage(title, message);
 
     // 下の「サブ n/m 接続」から、設定画面の「ライブラリ」を開く(決定ログ S-1)
     private void OnSubStatusClick(object sender, RoutedEventArgs e) => OnSettingsClick(sender, e);
@@ -1013,6 +1028,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
+        Services.LifecycleLog.Write($"メイン画面を閉じます(保存していない変更:{(_viewModel.HasChanges && !_closeConfirmed ? "あり、確認します" : "なし")})");
         if (_closeConfirmed || !_viewModel.HasChanges)
         {
             return;

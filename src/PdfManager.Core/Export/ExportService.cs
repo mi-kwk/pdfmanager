@@ -12,7 +12,8 @@ namespace PdfManager.Core.Export;
 
 // Zip:ZIP にする(決定ログ CC-2)。WriteList:一覧表(CSV)も出す(CC-4)。SplitGroupId:このタググループのタグごとにフォルダを分ける(CC-5)
 // Handoff:PdfManager で取り込める形で出す(決定ログ EB-7。版はまとまりごと、情報ファイル付き、フォルダ分けはしない)
-public sealed record ExportOptions(bool Zip = false, bool WriteList = true, long? SplitGroupId = null, bool Handoff = false);
+// IncludeExePath:この PdfManager の exe も一緒に入れる(決定ログ HA-8。相手の PC で更新に使える)
+public sealed record ExportOptions(bool Zip = false, bool WriteList = true, long? SplitGroupId = null, bool Handoff = false, string? IncludeExePath = null);
 
 public sealed record ExportPlan(int Count, long Bytes, int UnavailableCount, long? FreeBytes)
 {
@@ -30,8 +31,10 @@ public static class ExportService
     public const string ListFileName = "一覧.csv";
     private const string UnsetFolder = "未設定";
 
-    public static ExportPlan Plan(LibraryStorage storage, IReadOnlyCollection<string> documentIds, string destinationFolder, bool handoff = false)
+    public static ExportPlan Plan(LibraryStorage storage, IReadOnlyCollection<string> documentIds, string destinationFolder, bool handoff = false,
+        string? includeExePath = null)
     {
+        var exeBytes = includeExePath is null ? 0 : new FileInfo(includeExePath).Length;
         using var connection = PdfManagerDatabase.Open(storage.Main.DataFolder.DatabasePath);
         if (handoff)
         {
@@ -40,7 +43,7 @@ public static class ExportService
         var details = new DocumentRepository(connection).GetDetails(documentIds);
         var storages = new SubLibraryRepository(connection).GetStorageIds(documentIds);
         var available = details.Where(d => storage.GetDataFolder(storages.GetValueOrDefault(d.Id)) is not null).ToList();
-        return new ExportPlan(available.Count, available.Sum(d => d.FileSize), details.Count - available.Count, FreeBytes(destinationFolder));
+        return new ExportPlan(available.Count, available.Sum(d => d.FileSize) + exeBytes, details.Count - available.Count, FreeBytes(destinationFolder));
     }
 
     public static ExportResult Run(LibraryStorage storage, IReadOnlyCollection<string> documentIds, string destinationFolder, ExportOptions options,
@@ -155,6 +158,25 @@ public static class ExportService
                     File.WriteAllBytes(Path.Combine(workPath, ListFileName), csv);
                 }
             }
+
+            // 決定ログ HA-8: この PdfManager の exe も入れる(いちばん上に、元の名前で)
+            if (options.IncludeExePath is { } exe)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (zip is not null)
+                {
+                    zip.CreateEntryFromFile(exe, Path.GetFileName(exe), CompressionLevel.NoCompression);
+                }
+                else
+                {
+                    File.Copy(exe, Path.Combine(workPath, Path.GetFileName(exe)));
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            DeleteOutput(workPath, options.Zip);
+            return new ExportResult(outputPath, exported, skipped, Cancelled: true);
         }
         catch
         {

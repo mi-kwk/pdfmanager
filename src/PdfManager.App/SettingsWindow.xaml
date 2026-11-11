@@ -39,7 +39,16 @@
             <Border Grid.Row="0" Style="{StaticResource PaneBorder}" Margin="0,0,0,12">
                 <StackPanel>
                     <!-- アプリのバージョン(exe を作った日時、2026-11-10 の利用者の要望) -->
-                    <ui:TextBlock x:Name="AppVersionText" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,10" />
+                    <!-- 決定ログ HA-1: USB メモリなどにある新しい exe を選んで、この exe と差し替える -->
+                    <DockPanel Margin="0,0,0,10">
+                        <ui:Button DockPanel.Dock="Right" Content="新しいバージョンに更新" Icon="{ui:SymbolIcon ArrowUp24}" Click="OnUpdateClick"
+                                   AutomationProperties.Name="新しいバージョンに更新"
+                                   ToolTip="USB メモリなどにある新しい PdfManager.exe を選ぶと、この PdfManager.exe と差し替えて起動し直します" />
+                        <StackPanel VerticalAlignment="Center">
+                            <ui:TextBlock x:Name="AppVersionText" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <ui:TextBlock x:Name="AppPathText" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </DockPanel>
                     <ui:TextBlock Text="現在のライブラリ(メイン)" FontTypography="BodyStrong" Margin="0,0,0,8" />
                     <ui:TextBlock x:Name="CurrentName" FontTypography="Subtitle" />
                     <ui:TextBlock x:Name="CurrentFolder" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />

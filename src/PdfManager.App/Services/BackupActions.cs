@@ -125,12 +125,25 @@ public static class BackupActions
     // 決定ログ BB-5: 前回(なければライブラリを作った日)から設定の日数たっていたら、起動時に知らせる
     public static async Task RemindIfDueAsync(Window owner, LibraryActions libraries, StorageAccess storage, int documentCount)
     {
-        var preferences = libraries.Backup;
-        if (preferences.ReminderDays <= 0 || documentCount == 0)
+        if (documentCount == 0 || DueMessage(libraries, storage.Storage.Main) is not { } message)
         {
             return;
         }
-        var library = storage.Storage.Main;
+        if (await new WpfUiDialogs(owner).ConfirmAsync("バックアップ",
+                message + "\n今すぐバックアップしますか?\n\n知らせる日数は、設定画面の「バックアップ」で変えられます。", "今すぐバックアップ"))
+        {
+            await RunAsync(owner, libraries, storage);
+        }
+    }
+
+    // 決定ログ BB-5: 知らせる日数がたっていれば、その旨の文。たっていなければ(知らせない設定のときも)null。更新の前の確認(HA-4)にも使う
+    public static string? DueMessage(LibraryActions libraries, LibraryInfo library)
+    {
+        var preferences = libraries.Backup;
+        if (preferences.ReminderDays <= 0)
+        {
+            return null;
+        }
         var last = preferences.LastFor(library.Id);
         DateTimeOffset since;
         try
@@ -139,21 +152,16 @@ public static class BackupActions
         }
         catch (Exception ex) when (ex is LibraryException or IOException)
         {
-            return;
+            return null;
         }
         var days = (int)(DateTimeOffset.Now - since).TotalDays;
         if (days < preferences.ReminderDays)
         {
-            return;
+            return null;
         }
-        var message = last is null
+        return last is null
             ? "このライブラリはまだ一度もバックアップしていません。"
             : $"前回のバックアップから {days} 日たっています。";
-        if (await new WpfUiDialogs(owner).ConfirmAsync("バックアップ",
-                message + "\n今すぐバックアップしますか?\n\n知らせる日数は、設定画面の「バックアップ」で変えられます。", "今すぐバックアップ"))
-        {
-            await RunAsync(owner, libraries, storage);
-        }
     }
 
     public static string LastText(LibraryActions libraries, LibraryInfo library) => libraries.Backup.LastFor(library.Id) is { } last

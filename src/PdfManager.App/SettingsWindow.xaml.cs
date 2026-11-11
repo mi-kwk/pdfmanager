@@ -47,9 +47,7 @@ public sealed record SubLibraryRow(SubLibraryState State, string Usage)
 public partial class SettingsWindow : FluentWindow
 {
     // exe を作った日時から付けたバージョン(年.月.日.時分。PdfManager.App.csproj の Version)
-    public static string AppVersion =>
-        System.Reflection.Assembly.GetEntryAssembly()?.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
-            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "不明";
+    public static string AppVersion => AppUpdater.CurrentVersionText;
 
     private readonly LibraryInfo _current;
     private readonly LibraryActions _libraries;
@@ -67,6 +65,7 @@ public partial class SettingsWindow : FluentWindow
         SystemThemeWatcher.Watch(this);
 
         AppVersionText.Text = $"PdfManager バージョン {AppVersion}";
+        AppPathText.Text = AppUpdater.StandaloneExePath is { } exe ? $"置き場所:{exe}" : "開発用の実行";
         CurrentName.Text = current.Name;
         CurrentFolder.Text = current.RootFolder;
         ShowRegisterAllBox.IsChecked = libraries.ShowRegisterAll;
@@ -177,6 +176,18 @@ public partial class SettingsWindow : FluentWindow
         if (IsLoaded && ArchiveAlertBox.SelectedItem is System.Windows.Controls.ComboBoxItem { Tag: string tag })
         {
             _libraries.SetArchiveAlertPercent(int.Parse(tag, System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    // 決定ログ HA-1: exe を差し替えたら設定画面を閉じ、メイン画面が閉じる(終わるときに新しいバージョンで起動し直す)
+    public bool Updated { get; private set; }
+
+    private async void OnUpdateClick(object sender, RoutedEventArgs e)
+    {
+        if (await AppUpdater.RunAsync(this, _libraries, _storage))
+        {
+            Updated = true;
+            Close();
         }
     }
 

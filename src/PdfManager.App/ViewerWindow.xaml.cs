@@ -66,13 +66,17 @@ public partial class ViewerWindow : FluentWindow
         InputBindings.Add(new KeyBinding(new RelayCommand(() => MoveSelection(-1)), Key.Tab, ModifierKeys.Control | ModifierKeys.Shift));
         _releaseTimer.Tick += (_, _) => ReleaseIdleViews();
         _releaseTimer.Start();
+        Services.LifecycleLog.Write("ビューアを開きました");
         Closed += (_, _) =>
         {
             _releaseTimer.Stop();
+            var views = _tabs.Count(t => t.View is not null);
+            Services.LifecycleLog.Write($"ビューアを閉じます(タブ {_tabs.Count} 個、表示中の PDF {views} 個を片付けます)");
             foreach (var tab in _tabs)
             {
                 tab.View?.Dispose();
             }
+            Services.LifecycleLog.Write("ビューアの後片付けが終わりました");
         };
     }
 

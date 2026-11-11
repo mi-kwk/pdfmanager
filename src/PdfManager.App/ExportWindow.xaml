@@ -41,6 +41,9 @@
             </StackPanel>
             <CheckBox x:Name="ListCheck" Content="一覧表(一覧.csv)も出す(タイトル・タグ・補助項目・登録日・メモ。Excel で開けます)" IsChecked="True" Margin="0,6,0,0"
                       AutomationProperties.Name="一覧表も出す" />
+            <!-- 決定ログ HA-8: 相手の PC で PdfManager を更新できるよう、この exe も入れる -->
+            <CheckBox x:Name="IncludeExeCheck" Content="この PdfManager.exe も一緒に入れる" Margin="0,6,0,0" AutomationProperties.Name="この PdfManager.exe も一緒に入れる" />
+            <ui:TextBlock x:Name="IncludeExeNote" TextWrapping="Wrap" FontSize="12" Margin="28,0,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                 <ui:TextBlock Text="フォルダ分け" VerticalAlignment="Center" Margin="0,0,8,0" />
                 <ComboBox x:Name="SplitBox" MinWidth="220" DisplayMemberPath="Label" AutomationProperties.Name="フォルダ分け" />

@@ -1462,7 +1462,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     public partial string ListMessageTitle { get; set; } = "";
 
-    private void ShowListMessage(string title, string message)
+    public void ShowListMessage(string title, string message)
     {
         ListMessageTitle = title;
         ListMessage = message;
