@@ -465,6 +465,8 @@ public partial class SettingsWindow : FluentWindow
             var box = new Wpf.Ui.Controls.MessageBox
             {
                 Owner = this,
+                // 決定ログ HD-1: 設定画面の中央に出す
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Title = "使う方を選ぶ",
                 Content = $"サブライブラリ「{row.Name}」が 2 か所で見つかりました。この PC で使う方を選んでください。\n\n1:{first}\n2:{second}\n\n選ばなかった方は、次から使いません(フォルダは消しません)。",
                 PrimaryButtonText = "1 を使う",

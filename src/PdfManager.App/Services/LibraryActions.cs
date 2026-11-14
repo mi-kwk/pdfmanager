@@ -162,6 +162,18 @@ public sealed class LibraryActions(AppSettingsStore store)
         store.Save(Settings);
     }
 
+    // 決定ログ HC-7: 項目・タグ管理の「配下のタグ」の欄を畳んでいるか
+    public bool ChildTagsCollapsed => Settings.ChildTagsCollapsed;
+
+    public void SetChildTagsCollapsed(bool value)
+    {
+        if (Settings.ChildTagsCollapsed != value)
+        {
+            Settings = Settings with { ChildTagsCollapsed = value };
+            store.Save(Settings);
+        }
+    }
+
     // 決定ログ HA-6: 前回起動したバージョンと比べ、上がっていれば「更新しました」の文を返す(今のバージョンを記録する)
     public string? CheckUpdated(string currentVersionText, bool afterUpdate)
     {

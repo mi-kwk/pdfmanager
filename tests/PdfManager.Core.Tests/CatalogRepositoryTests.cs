@@ -253,6 +253,41 @@ public sealed class CatalogRepositoryTests : IDisposable
         Assert.Equal("自由タグ", Tag("バトル").GroupLabel);
     }
 
+    // 決定ログ HC-4〜HC-6: 配下のタグの欄から 1 つずつ足す・紐づけを外す
+    [Fact]
+    public void AddChildTag_CreatesOrLinksExisting_AndRemoveKeepsTag()
+    {
+        var g = CreateBookGroups();
+
+        var (jump, created) = _catalog.AddChildTag(g.Manga, " ジャンプ ", g.Bunrui2);
+        Assert.True(created);
+        Assert.Equal([g.Manga], Tag("ジャンプ").ParentIds);
+        Assert.Equal("分類２", Tag("ジャンプ").GroupName);
+
+        // 同じ名前(全角・半角の違いも)が順位 2 にあれば、作らずに紐づけを足す
+        var (again, createdAgain) = _catalog.AddChildTag(g.Magazine, "ｼﾞｬﾝﾌﾟ", g.Bunrui2);
+        Assert.False(createdAgain);
+        Assert.Equal(jump, again);
+        Assert.Equal(["漫画", "雑誌"], Tag("ジャンプ").ParentNames);
+        // もう紐づいていれば何もしない
+        _catalog.AddChildTag(g.Manga, "ジャンプ", g.Bunrui2);
+        Assert.Equal(2, Tag("ジャンプ").ParentIds.Count);
+
+        // 別の順位のタグと同じ名前・入れるグループの順位違い・順位 5 や独立の親は受け付けない
+        _catalog.AddTag("悟空", g.Bunrui3);
+        Assert.Throws<CatalogException>(() => _catalog.AddChildTag(g.Manga, "悟空", g.Bunrui2));
+        Assert.Throws<CatalogException>(() => _catalog.AddChildTag(g.Manga, "ナルト", g.Bunrui3));
+        var author = _catalog.AddTag("〇〇〇", g.Author);
+        Assert.Throws<CatalogException>(() => _catalog.AddChildTag(author, "ナルト", g.Bunrui2));
+
+        // 「×」は紐づけを外すだけ(タグとほかの紐づけは残る)
+        _catalog.RemoveTagParent(jump, g.Manga);
+        Assert.Equal(["雑誌"], Tag("ジャンプ").ParentNames);
+        _catalog.RemoveTagParent(jump, g.Magazine);
+        Assert.Empty(Tag("ジャンプ").ParentIds);
+        Assert.Equal("分類２", Tag("ジャンプ").GroupName);
+    }
+
     [Fact]
     public void ChangingRankOrGroup_RemovesLinksThatNoLongerFit()
     {

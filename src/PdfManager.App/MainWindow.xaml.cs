@@ -1017,7 +1017,7 @@ public partial class MainWindow : FluentWindow
         }
         // 決定ログ S-12: 項目・タグの定義の変更は、サブの文書の値にも関わる
         await _storage.RunAsync(s => s.BeginCatalogEdit());
-        new ManageWindow(_viewModel.DataFolder, s => _storage.Storage.IsAvailable(s)) { Owner = this }.ShowDialog();
+        new ManageWindow(_viewModel.DataFolder, s => _storage.Storage.IsAvailable(s), _libraries) { Owner = this }.ShowDialog();
         var problems = await _storage.RunAsync(s => s.EndCatalogEdit());
         _viewModel.Refresh();
         if (problems.Count > 0)

@@ -440,6 +440,44 @@ public sealed class CatalogRepository(SqliteConnection connection)
         transaction.Commit();
     }
 
+    // 決定ログ HC-4・HC-5: 配下のタグの欄から 1 つ足す。parentTagId のタグに紐づく、1 つ下の順位のタグ(childGroupId のグループ)を作る。
+    // 同じ名前のタグ(別名も)が 1 つ下の順位のグループに既にあれば、新しく作らずに紐づけを足す。戻り値は (タグ ID, 新しく作ったか)
+    public (long TagId, bool Created) AddChildTag(long parentTagId, string name, long childGroupId)
+    {
+        var cleaned = ValidateName(name, "タグ名");
+        var ranks = GetGroups().ToDictionary(g => g.Id, g => g.Rank);
+        var tags = GetTags().ToDictionary(t => t.Id);
+        if (!tags.TryGetValue(parentTagId, out var parent) || parent.GroupId is not { } parentGroup || ranks[parentGroup] is < 1 or >= TagGroup.MaxRank)
+        {
+            throw new CatalogException("配下のタグを足せるのは、順位 1〜4 のタググループのタグだけです。");
+        }
+        var childRank = ranks[parentGroup] + 1;
+        if (!ranks.TryGetValue(childGroupId, out var groupRank) || groupRank != childRank)
+        {
+            throw new CatalogException($"入れるグループは「{TagRanks.Label(childRank)}」のタググループから選んでください。");
+        }
+        if ((FindTagId(cleaned) ?? FindAliasOwner(cleaned)) is { } existingId)
+        {
+            var existing = tags[existingId];
+            if (existing.GroupId is not { } existingGroup || ranks[existingGroup] != childRank)
+            {
+                throw new CatalogException($"「{existing.Name}」は「{existing.GroupLabel}」のタグとしてすでにあります。「{TagRanks.Label(childRank)}」のタグにするには、先にそのタグのグループを変えてください(タググループが違っても同じ名前は使えません)。");
+            }
+            if (!existing.ParentIds.Contains(parentTagId))
+            {
+                SetTagParents(existingId, existing.ParentIds.Append(parentTagId));
+            }
+            return (existingId, false);
+        }
+        var id = InsertTag(cleaned, childGroupId);
+        SetTagParents(id, [parentTagId]);
+        return (id, true);
+    }
+
+    // 決定ログ HC-6: 配下のタグの欄の「×」。紐づけだけを外す(タグとほかの紐づけ、PDF のタグはそのまま)
+    public void RemoveTagParent(long tagId, long parentTagId) =>
+        Execute("DELETE FROM tag_links WHERE child_id = $child AND parent_id = $parent;", null, ("$child", tagId), ("$parent", parentTagId));
+
     public void RenameTag(long tagId, string name)
     {
         var cleaned = ValidateName(name, "タグ名");

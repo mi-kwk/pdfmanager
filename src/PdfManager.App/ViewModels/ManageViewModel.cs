@@ -23,6 +23,9 @@ public sealed record ParentTagChoice(long? Id, string Label)
     public static ParentTagChoice None { get; } = new(null, "(なし)");
 }
 
+// 配下のタグの欄の 1 行(決定ログ HC-3)。Detail はグループ名と PDF の件数
+public sealed record ChildTagRow(long Id, string Name, string Detail);
+
 // タグの紐づけ先の候補 1 つ分(決定ログ Q-3)。チェックはすぐに保存する
 public sealed partial class ParentChoice : ObservableObject
 {
@@ -69,12 +72,18 @@ public partial class ManageViewModel : ObservableObject
     private readonly Func<string?, bool> _isStorageAvailable;
     private IReadOnlyList<TagSummary> _allTags = [];
 
-    // isStorageAvailable:保存先(null = メイン)がつながっているか(親のタグをまとめて付けるとき、決定ログ EC-6)
-    public ManageViewModel(DataFolder dataFolder, IUserDialogs dialogs, Func<string?, bool>? isStorageAvailable = null)
+    private readonly Action<bool>? _saveChildPanelExpanded;
+
+    // isStorageAvailable:保存先(null = メイン)がつながっているか(親のタグをまとめて付けるとき、決定ログ EC-6)。
+    // childPanelExpanded・saveChildPanelExpanded:配下のタグの欄を開いているか(PC ごとに覚える、決定ログ HC-7)
+    public ManageViewModel(DataFolder dataFolder, IUserDialogs dialogs, Func<string?, bool>? isStorageAvailable = null,
+        bool childPanelExpanded = true, Action<bool>? saveChildPanelExpanded = null)
     {
         _dataFolder = dataFolder;
         _dialogs = dialogs;
         _isStorageAvailable = isStorageAvailable ?? (s => s is null);
+        IsChildPanelExpanded = childPanelExpanded;
+        _saveChildPanelExpanded = saveChildPanelExpanded;
         NewFieldType = FieldTypeChoices[0];
         NewGroupRank = RankChoices[0];
         TagGroupFilter = AllGroups;
@@ -268,7 +277,7 @@ public partial class ManageViewModel : ObservableObject
     public partial GroupChoice TagGroupFilter { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsTagSelected), nameof(IsParentTagDirty), nameof(IsGroupDirty), nameof(ChildTagsText))]
+    [NotifyPropertyChangedFor(nameof(IsTagSelected), nameof(IsParentTagDirty), nameof(IsGroupDirty), nameof(ChildTagsText), nameof(IsTagNameDirty), nameof(IsAliasDirty))]
     public partial TagSummary? SelectedTag { get; set; }
 
     [ObservableProperty]
@@ -311,6 +320,9 @@ public partial class ManageViewModel : ObservableObject
 
     public bool IsTagSelected => SelectedTag is not null;
 
+    [ObservableProperty]
+    public partial bool ShowParentSection { get; set; } = true;
+
     // ==== 同じグループの中の親のタグ(決定ログ EC-5・EC-6) ====
 
     [ObservableProperty]
@@ -326,6 +338,178 @@ public partial class ManageViewModel : ObservableObject
     public bool IsGroupDirty => SelectedTag is { } tag && EditTagGroup is { } group && group.Id != tag.GroupId;
 
     partial void OnEditTagGroupChanged(GroupChoice? value) => OnPropertyChanged(nameof(IsGroupDirty));
+
+    // ==== 保存していない名前・別名(決定ログ HC-8) ====
+
+    public bool IsTagNameDirty => SelectedTag is { } tag && NameNormalizer.Clean(EditTagName) != tag.Name;
+
+    public bool IsAliasDirty => SelectedTag is { } tag && AliasKey(EditTagAliases) != AliasKey(tag.AliasText);
+
+    public bool HasUnsavedTagEdits => IsTagNameDirty || IsAliasDirty;
+
+    partial void OnEditTagNameChanged(string value) => OnPropertyChanged(nameof(IsTagNameDirty));
+
+    partial void OnEditTagAliasesChanged(string value) => OnPropertyChanged(nameof(IsAliasDirty));
+
+    private static string[] SplitAliases(string text) =>
+        text.Split(['、', ',', '，'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+    private static string AliasKey(string text) => string.Join("、", SplitAliases(text).Select(NameNormalizer.Clean));
+
+    // ほかのタグを選ぶ前に、保存していない名前・別名を覚えておく(読み直しのときは覚えない)
+    private (TagSummary Tag, string Name, string Aliases, bool NameDirty, bool AliasDirty)? _pendingEdits;
+    private bool _reloading;
+
+    partial void OnSelectedTagChanging(TagSummary? oldValue, TagSummary? newValue)
+    {
+        _pendingEdits = !_reloading && oldValue is not null && newValue?.Id != oldValue.Id && HasUnsavedTagEdits
+            ? (oldValue, EditTagName, EditTagAliases, IsTagNameDirty, IsAliasDirty)
+            : null;
+    }
+
+    // 決定ログ HC-8: 保存していないままほかのタグを選んだら、保存するか聞く
+    private async void AskSavePendingEdits()
+    {
+        if (_pendingEdits is not { } pending)
+        {
+            return;
+        }
+        _pendingEdits = null;
+        var what = pending.NameDirty && pending.AliasDirty ? "名前と別名" : pending.NameDirty ? "名前" : "別名";
+        if (!await _dialogs.ConfirmAsync("保存していない変更",
+                $"タグ「{pending.Tag.Name}」の{what}の変更を保存していません。保存しますか?\n(「キャンセル」で変更を捨てます)", "保存する"))
+        {
+            return;
+        }
+        await SaveEditsAsync(pending.Tag, pending.NameDirty ? pending.Name : null, pending.AliasDirty ? pending.Aliases : null);
+    }
+
+    private async Task<bool> SaveEditsAsync(TagSummary tag, string? name, string? aliases)
+    {
+        var selected = SelectedTag?.Id;
+        var ok = (name is null || await RunAsync(c => c.RenameTag(tag.Id, name)))
+            && (aliases is null || await RunAsync(c => c.SetAliases(tag.Id, SplitAliases(aliases))));
+        ReloadAll(selectTagId: selected);
+        return ok;
+    }
+
+    // 決定ログ HC-8: 画面を閉じる前。保存していなければ聞く。閉じてよければ true
+    public async Task<bool> ConfirmCloseAsync()
+    {
+        if (SelectedTag is not { } tag || !HasUnsavedTagEdits)
+        {
+            return true;
+        }
+        var what = IsTagNameDirty && IsAliasDirty ? "名前と別名" : IsTagNameDirty ? "名前" : "別名";
+        switch (await _dialogs.AskChoiceAsync("保存していない変更", $"タグ「{tag.Name}」の{what}の変更を保存していません。保存しますか?", "保存する", "保存しない", "キャンセル"))
+        {
+            case 1:
+                return await SaveEditsAsync(tag, IsTagNameDirty ? EditTagName : null, IsAliasDirty ? EditTagAliases : null);
+            case 2:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // ==== 配下のタグ(1 つ下の順位のタグ、決定ログ HC-1〜HC-7) ====
+
+    // 選んだタグが順位 1〜4 のグループにある
+    [ObservableProperty]
+    public partial bool HasChildPanel { get; set; }
+
+    [ObservableProperty]
+    public partial string ChildPanelTitle { get; set; } = "";
+
+    [ObservableProperty]
+    public partial string ChildHint { get; set; } = "";
+
+    [ObservableProperty]
+    public partial IReadOnlyList<ChildTagRow> ChildTags { get; set; } = [];
+
+    // 1 つ下の順位のタググループ(入れる先)
+    [ObservableProperty]
+    public partial IReadOnlyList<GroupChoice> ChildGroupChoices { get; set; } = [];
+
+    [ObservableProperty]
+    public partial GroupChoice? NewChildGroup { get; set; }
+
+    // グループが複数あるときだけ選ぶ欄を出す
+    public bool HasManyChildGroups => ChildGroupChoices.Count > 1;
+
+    public bool CanAddChild => ChildGroupChoices.Count > 0;
+
+    [ObservableProperty]
+    public partial string NewChildTagName { get; set; } = "";
+
+    [ObservableProperty]
+    public partial bool IsChildPanelExpanded { get; set; }
+
+    partial void OnIsChildPanelExpandedChanged(bool value) => _saveChildPanelExpanded?.Invoke(value);
+
+    partial void OnChildGroupChoicesChanged(IReadOnlyList<GroupChoice> value)
+    {
+        OnPropertyChanged(nameof(HasManyChildGroups));
+        OnPropertyChanged(nameof(CanAddChild));
+    }
+
+    private void BuildChildPanel()
+    {
+        var rank = SelectedTag?.GroupId is { } groupId ? Groups.FirstOrDefault(g => g.Id == groupId)?.Rank : null;
+        HasChildPanel = SelectedTag is not null && rank is >= 1 and < TagGroup.MaxRank;
+        if (SelectedTag is not { } tag || !HasChildPanel)
+        {
+            ChildTags = [];
+            ChildGroupChoices = [];
+            NewChildGroup = null;
+            return;
+        }
+        var childRank = rank!.Value + 1;
+        var childGroups = Groups.Where(g => g.Rank == childRank).ToList();
+        ChildPanelTitle = $"配下のタグ(「{tag.Name}」に紐づく{TagRanks.Label(childRank)}のタグ)";
+        ChildTags = _allTags.Where(t => t.ParentIds.Contains(tag.Id))
+            .OrderBy(t => t.GroupName, StringComparer.Ordinal).ThenBy(t => NameNormalizer.Normalize(t.Name), StringComparer.Ordinal)
+            .Select(t => new ChildTagRow(t.Id, t.Name, $"{t.GroupLabel} · {t.UsageCount:N0} 件"))
+            .ToList();
+        var previous = NewChildGroup?.Id;
+        ChildGroupChoices = childGroups.Select(g => new GroupChoice(g.Id, g.Name)).ToList();
+        NewChildGroup = ChildGroupChoices.FirstOrDefault(c => c.Id == previous) ?? ChildGroupChoices.FirstOrDefault();
+        ChildHint = childGroups.Count == 0
+            ? $"「{TagRanks.Label(childRank)}」のタググループがありません。「タググループ」タブで作ると、ここで配下のタグを登録できます。"
+            : (ChildTags.Count == 0 ? "配下のタグはまだありません。" : $"{ChildTags.Count:N0} 個。")
+              + "下の欄にタグ名を入れて「追加」(または Enter)で 1 つずつ登録します。すでにあるタグ名なら、そのタグに紐づけを足します。「×」は紐づけを外すだけです(タグは消えません)。ダブルクリックでそのタグを開きます。";
+    }
+
+    [RelayCommand]
+    private async Task AddChildTagAsync()
+    {
+        if (SelectedTag is not { } parent || NewChildGroup?.Id is not { } groupId || NameNormalizer.Clean(NewChildTagName).Length == 0)
+        {
+            return;
+        }
+        if (await RunAsync(c => c.AddChildTag(parent.Id, NewChildTagName, groupId)))
+        {
+            NewChildTagName = "";
+            ReloadAll(selectTagId: parent.Id);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RemoveChildTagAsync(ChildTagRow? row)
+    {
+        if (SelectedTag is { } parent && row is not null && await RunAsync(c => c.RemoveTagParent(row.Id, parent.Id)))
+        {
+            ReloadAll(selectTagId: parent.Id);
+        }
+    }
+
+    // ダブルクリックで、そのタグを開く(一覧の絞り込みを外して選ぶ)
+    public void OpenChildTag(ChildTagRow row)
+    {
+        TagFilter = "";
+        TagGroupFilter = AllGroups;
+        ApplyTagFilter(row.Id);
+    }
 
     // 決定ログ FC-2: このタグの下にある小分類
     public string ChildTagsText => SelectedTag is not { } tag ? ""
@@ -416,8 +600,11 @@ public partial class ManageViewModel : ObservableObject
         MergeTargets = value is null ? [] : _allTags.Where(t => t.Id != value.Id).ToList();
         MergeTarget = null;
         ParentFilter = "";
+        NewChildTagName = "";
         BuildParentChoices();
         BuildParentTagChoices();
+        BuildChildPanel();
+        AskSavePendingEdits();
     }
 
     // 決定ログ Q-3: 紐づけられるのは、1 つ上の順位のタググループのタグ
@@ -425,6 +612,8 @@ public partial class ManageViewModel : ObservableObject
     {
         var rank = SelectedTag?.GroupId is { } groupId ? Groups.FirstOrDefault(g => g.Id == groupId)?.Rank : null;
         CanHaveParents = SelectedTag is not null && rank is >= 2;
+        // 決定ログ HC-1: 順位 1 のタグは紐づけを持てないので、紐づけの欄の代わりに配下のタグの欄だけを出す
+        ShowParentSection = rank is not 1;
         if (SelectedTag is not { } tag || rank is not >= 2)
         {
             ParentChoices = [];
@@ -699,7 +888,15 @@ public partial class ManageViewModel : ObservableObject
         SelectedGroup = Groups.FirstOrDefault(g => g.Id == selectGroupId);
 
         TagCount = _allTags.Count;
-        ApplyTagFilter(selectTagId);
+        _reloading = true;
+        try
+        {
+            ApplyTagFilter(selectTagId);
+        }
+        finally
+        {
+            _reloading = false;
+        }
         if (keepParentFilter)
         {
             ParentFilter = parentFilter;

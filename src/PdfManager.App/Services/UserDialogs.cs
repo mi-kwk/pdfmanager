@@ -34,11 +34,16 @@ public sealed record TagPick(string Key, string Name, string Detail);
 
 public sealed class WpfUiDialogs(Window? owner) : IUserDialogs
 {
+    // 決定ログ HD-1: 確認画面は親の画面の中央に出す。指定しないと主ディスプレイの中央に出て、
+    // 親の画面を別のディスプレイに置いているときに離れた場所に出てしまう
+    private WindowStartupLocation StartupLocation => owner is { IsLoaded: true } ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen;
+
     public async Task<bool> ConfirmAsync(string title, string message, string confirmText)
     {
         var box = new Wpf.Ui.Controls.MessageBox
         {
             Owner = owner,
+            WindowStartupLocation = StartupLocation,
             Title = title,
             Content = message,
             PrimaryButtonText = confirmText,
@@ -52,6 +57,7 @@ public sealed class WpfUiDialogs(Window? owner) : IUserDialogs
         var box = new Wpf.Ui.Controls.MessageBox
         {
             Owner = owner,
+            WindowStartupLocation = StartupLocation,
             Title = title,
             Content = message,
             CloseButtonText = "OK",
@@ -64,6 +70,7 @@ public sealed class WpfUiDialogs(Window? owner) : IUserDialogs
         var box = new Wpf.Ui.Controls.MessageBox
         {
             Owner = owner,
+            WindowStartupLocation = StartupLocation,
             Title = "保存していない変更があります",
             Content = "詳細で編集した内容を保存しますか?",
             PrimaryButtonText = "保存する",
@@ -83,6 +90,7 @@ public sealed class WpfUiDialogs(Window? owner) : IUserDialogs
         var box = new Wpf.Ui.Controls.MessageBox
         {
             Owner = owner,
+            WindowStartupLocation = StartupLocation,
             Title = title,
             Content = message,
             PrimaryButtonText = primary,

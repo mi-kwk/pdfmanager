@@ -20,11 +20,12 @@ public sealed record ViewPreferences(string Sort = "Registered", long? SortField
 // ArchiveAlertPercent: メインのドライブの空きがこの % を切ったら起動時に知らせる(決定ログ EA-6。0 は知らせない)
 // LastHandoffs: ライブラリ ID ごとの、この PC で前回「受け渡し」を書き出した日時(決定ログ EB-8)
 // LastRunVersion: この PC で前回起動した PdfManager のバージョン(決定ログ HA-6。上がっていたら「更新しました」と知らせる)
+// ChildTagsCollapsed: 項目・タグ管理の「配下のタグ」の欄を畳んでいるか(決定ログ HC-7。初めは開いている)
 public sealed record AppSettings(string? LastLibraryFilePath, IReadOnlyList<RecentLibrary> RecentLibraries, ViewPreferences? View = null,
     bool ShowRegisterAll = false, int TagCollapseRank = AppSettings.DefaultTagCollapseRank, BackupPreferences? Backup = null,
     string? ExportFolder = null, bool UseTextTitleCandidates = true, bool DuplicateLooseMatch = false, bool RecordUsage = true,
     int ArchiveAlertPercent = AppSettings.DefaultArchiveAlertPercent, IReadOnlyDictionary<string, DateTimeOffset>? LastHandoffs = null,
-    string? LastRunVersion = null)
+    string? LastRunVersion = null, bool ChildTagsCollapsed = false)
 {
     public const int DefaultTagCollapseRank = 1;
 
